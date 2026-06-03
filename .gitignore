@@ -1,0 +1,17 @@
+# macOS
+.DS_Store
+
+# Editor / IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+
+# Local env / secrets
+.env
+.env.local
+*.local
+
+# Claude local settings (keep team .claude/ tracked; ignore per-machine overrides)
+.claude/settings.local.json

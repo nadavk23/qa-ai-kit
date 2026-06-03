@@ -1,0 +1,32 @@
+name: Login flow regression
+description: Verifies an existing user can log in and lands on the dashboard.
+on_failure: stop
+
+steps:
+  - action: navigate
+    url: https://app.example.com/login
+
+  - action: assert_element
+    selector: 'input[name="email"]'
+    timeout_ms: 5000
+
+  - action: type
+    selector: 'input[name="email"]'
+    text: user@test.com
+
+  - action: type
+    selector: 'input[name="password"]'
+    text: hunter2
+
+  - action: click
+    selector: 'button[type="submit"]'
+
+  - action: assert_text
+    text: Welcome back
+    timeout_ms: 10000
+
+  - action: screenshot
+    path: artifacts/login-success.png
+
+  - action: session_save
+    name: dashboard-user
