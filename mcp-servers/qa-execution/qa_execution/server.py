@@ -12,10 +12,22 @@ import httpx
 from mcp.server.fastmcp import FastMCP
 
 from qa_execution.browser import BrowserSession
+from qa_execution.mobile import (
+    DeviceRegistry,
+    ios_assert_element_sync,
+    ios_assert_text_sync,
+    ios_inspect_sync,
+    ios_screenshot_sync,
+    ios_scroll_sync,
+    ios_tap_sync,
+    ios_type_sync,
+    ios_wait_sync,
+)
 from qa_execution.yaml_runner import run_steps, run_yaml_test
 
 mcp = FastMCP("qa-execution")
 session = BrowserSession()
+devices = DeviceRegistry()
 
 
 @mcp.tool()
@@ -311,8 +323,242 @@ async def test_run(path: str) -> str:
           ...action args
 
     See QA AI KIT/mcp-servers/qa-execution/tests/web/example-login.yaml for a sample.
+
+    Note: this runner currently supports web + API actions only. iOS YAML support
+    is a roadmap item — for iOS tests in this version, drive the ios_* tools directly.
     """
     return await run_yaml_test(path, session)
+
+
+# ---------- Mobile (iOS via Appium) ----------
+
+@mcp.tool()
+async def device_allocate(
+    platform: str,
+    version: str | None = None,
+    device_name: str | None = None,
+    app: str | None = None,
+    bundle_id: str | None = None,
+) -> str:
+    """Allocate a mobile device session. Returns an opaque token used by ios_* tools.
+
+    platform: "ios" (only iOS Simulator is supported in this version)
+    version: e.g. "17.5" — defaults to whatever the simulator has
+    device_name: e.g. "iPhone 15" (default), "iPhone 15 Pro", "iPad Pro (12.9-inch)"
+    app: absolute path to a .app or .ipa to install before testing
+    bundle_id: bundle ID of an already-installed app (e.g. "com.apple.mobilesafari")
+
+    Provide exactly one of `app` or `bundle_id`.
+
+    Requires an Appium 2 server running externally (default http://127.0.0.1:4723;
+    override via QA_APPIUM_URL). Install: `npm i -g appium && appium driver install xcuitest`.
+    """
+    platform_norm = platform.lower()
+    if platform_norm == "ios":
+        try:
+            token, device = await devices.allocate_ios(
+                version=version,
+                device_name=device_name,
+                app=app,
+                bundle_id=bundle_id,
+            )
+        except ValueError as e:
+            return f"FAIL: {e}"
+        except Exception as e:
+            return f"ERROR allocating iOS device: {type(e).__name__}: {e}"
+        return (
+            f"Allocated iOS device.\n"
+            f"  token: {token}\n"
+            f"  device_name: {device.device_name}\n"
+            f"  version: {device.version or '(simulator default)'}\n"
+            f"  app: {device.app or '-'}\n"
+            f"  bundle_id: {device.bundle_id or '-'}\n"
+            f"Pass this token to every ios_* tool. Call device_release when done."
+        )
+    if platform_norm == "android":
+        return "FAIL: Android support not yet implemented in this version."
+    return f"FAIL: unknown platform {platform!r}. Expected 'ios' or 'android'."
+
+
+@mcp.tool()
+async def device_release(token: str) -> str:
+    """Release an allocated device session and shut down its Appium driver."""
+    ok = await devices.release(token)
+    return f"Released device {token}." if ok else f"FAIL: unknown token {token!r}."
+
+
+@mcp.tool()
+async def device_list() -> str:
+    """List active device sessions with their tokens and metadata."""
+    items = devices.list()
+    if not items:
+        return "(no active device sessions)"
+    lines = [f"Active devices ({len(items)}):"]
+    for d in items:
+        lines.append(
+            f"  {d['token']} — {d['platform']} {d['device_name']} "
+            f"v{d['version'] or 'default'} "
+            f"app={d['app'] or '-'} bundle_id={d['bundle_id'] or '-'}"
+        )
+    return "\n".join(lines)
+
+
+@mcp.tool()
+async def ios_tap(token: str, strategy: str, value: str, timeout_ms: int = 10000) -> str:
+    """Tap an element on the allocated iOS device.
+
+    strategy: one of "accessibility_id" (preferred), "predicate", "xpath", "class_chain"
+    value: the locator value for that strategy
+        - accessibility_id: e.g. "loginButton"
+        - predicate:        e.g. "label == 'Sign In'"
+        - xpath:            e.g. "//XCUIElementTypeButton[@name='Sign In']"
+        - class_chain:      e.g. "**/XCUIElementTypeButton[`label == 'Sign In'`]"
+    """
+    try:
+        device = devices.get(token)
+    except KeyError as e:
+        return f"FAIL: {e}"
+    try:
+        msg = await asyncio.to_thread(ios_tap_sync, device, strategy, value, timeout_ms)
+        return f"PASS: {msg}"
+    except Exception as e:
+        return f"FAIL: {type(e).__name__}: {e}"
+
+
+@mcp.tool()
+async def ios_type(
+    token: str,
+    strategy: str,
+    value: str,
+    text: str,
+    clear: bool = True,
+    timeout_ms: int = 10000,
+) -> str:
+    """Type `text` into an iOS input element. Clears the field first by default."""
+    try:
+        device = devices.get(token)
+    except KeyError as e:
+        return f"FAIL: {e}"
+    try:
+        msg = await asyncio.to_thread(
+            ios_type_sync, device, strategy, value, text, clear, timeout_ms
+        )
+        return f"PASS: {msg}"
+    except Exception as e:
+        return f"FAIL: {type(e).__name__}: {e}"
+
+
+@mcp.tool()
+async def ios_assert_element(
+    token: str,
+    strategy: str,
+    value: str,
+    present: bool = True,
+    timeout_ms: int = 5000,
+) -> str:
+    """Assert an iOS element is present (or absent, with present=False). Returns PASS/FAIL."""
+    try:
+        device = devices.get(token)
+    except KeyError as e:
+        return f"FAIL: {e}"
+    ok, msg = await asyncio.to_thread(
+        ios_assert_element_sync, device, strategy, value, present, timeout_ms
+    )
+    return f"{'PASS' if ok else 'FAIL'}: {msg}"
+
+
+@mcp.tool()
+async def ios_assert_text(
+    token: str,
+    text: str,
+    strategy: str | None = None,
+    value: str | None = None,
+    timeout_ms: int = 5000,
+) -> str:
+    """Assert `text` appears on the iOS screen.
+
+    If `strategy` + `value` are provided, only the element's name/label/value is checked.
+    Otherwise the whole page source is scanned. Returns PASS/FAIL.
+    """
+    try:
+        device = devices.get(token)
+    except KeyError as e:
+        return f"FAIL: {e}"
+    ok, msg = await asyncio.to_thread(
+        ios_assert_text_sync, device, text, strategy, value, timeout_ms
+    )
+    return f"{'PASS' if ok else 'FAIL'}: {msg}"
+
+
+@mcp.tool()
+async def ios_inspect(token: str, limit: int = 50) -> str:
+    """Snapshot the current iOS screen: list interactive elements with their attributes.
+
+    Run before ios_tap / ios_type to find the right locator values.
+    Returns up to `limit` elements (default 50) that expose at least one of
+    name / label / value — the attributes you'd locate them by.
+    """
+    try:
+        device = devices.get(token)
+    except KeyError as e:
+        return f"FAIL: {e}"
+    try:
+        return await asyncio.to_thread(ios_inspect_sync, device, limit)
+    except Exception as e:
+        return f"FAIL: {type(e).__name__}: {e}"
+
+
+@mcp.tool()
+async def ios_screenshot(token: str, path: str = "") -> str:
+    """Capture a screenshot of the iOS device screen.
+
+    If `path` is empty, saves to ~/qa-screenshots/ios-<timestamp>.png and returns the path.
+    """
+    try:
+        device = devices.get(token)
+    except KeyError as e:
+        return f"FAIL: {e}"
+    if not path:
+        out_dir = Path.home() / "qa-screenshots"
+        out_dir.mkdir(exist_ok=True)
+        path = str(out_dir / f"ios-{datetime.now().strftime('%Y%m%d-%H%M%S')}.png")
+    try:
+        await asyncio.to_thread(ios_screenshot_sync, device, path)
+        return f"Screenshot saved: {path}"
+    except Exception as e:
+        return f"FAIL: {type(e).__name__}: {e}"
+
+
+@mcp.tool()
+async def ios_wait(
+    token: str,
+    strategy: str | None = None,
+    value: str | None = None,
+    timeout_ms: int = 5000,
+) -> str:
+    """Wait for an iOS element to appear, or sleep `timeout_ms` if no locator given."""
+    try:
+        device = devices.get(token)
+    except KeyError as e:
+        return f"FAIL: {e}"
+    ok, msg = await asyncio.to_thread(
+        ios_wait_sync, device, strategy, value, timeout_ms
+    )
+    return f"{'PASS' if ok else 'FAIL'}: {msg}"
+
+
+@mcp.tool()
+async def ios_scroll(token: str, direction: str = "down") -> str:
+    """Scroll the iOS screen. direction: up / down / left / right."""
+    try:
+        device = devices.get(token)
+    except KeyError as e:
+        return f"FAIL: {e}"
+    try:
+        msg = await asyncio.to_thread(ios_scroll_sync, device, direction)
+        return f"PASS: {msg}"
+    except Exception as e:
+        return f"FAIL: {type(e).__name__}: {e}"
 
 
 def main() -> None:
