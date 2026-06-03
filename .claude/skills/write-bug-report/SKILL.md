@@ -16,7 +16,11 @@ The user may give you:
 - A failed test run / log excerpt
 - A vague "X is broken" — in which case probe before writing
 
-If input is insufficient to produce a reproducible report, **ask** the user. Don't invent steps you weren't told. Specifically confirm:
+If input is insufficient to produce a reproducible report, **ask** the user — but ask incrementally, not as a 10-item form. Long question lists feel bureaucratic and people stop answering. The user is a teammate, not a ticket-filing system. Guide them one focused round at a time.
+
+### Field inventory (reference only — do NOT dump this at the user)
+
+The full set of fields a finished report wants:
 
 1. **Steps to reproduce** (or explicitly: "intermittent, no deterministic steps")
 2. **App version + build number**
@@ -27,7 +31,60 @@ If input is insufficient to produce a reproducible report, **ask** the user. Don
 7. **Reproducibility rate** — 1/1, 5/10, 0/10 since flag, etc.
 8. **Any logs / network traces** the user has
 
-If items **1, 2, or 3** are missing, **stop and ask** — without them the report isn't actionable. Items 4-8 fill in defaults if not provided, but flag them in the report as "unknown" so triage can revisit.
+### Probing protocol — three tiers, ask in order
+
+**Tier 1 — Critical blockers (must have before writing).** Without these the report isn't actionable.
+
+- Item 1 (what actually happened — concrete steps or observation)
+- Item 2 (app version + build)
+- Item 3 (device + OS)
+
+**Tier 2 — High-signal context (ask only what's likely relevant to the specific bug).** Pick at most 1-2 from this tier based on the bug shape:
+
+- Items 4, 5, 6, 7 — but only the ones that plausibly affect *this* bug. Examples:
+  - A comment/post bug → ask network (5) and whether post belongs to user/friend/group (a content-permission angle, fold into 1 if natural).
+  - A login bug → ask account type (4) and reproducibility (7).
+  - A crash on resume → ask app state (6).
+  - A photo upload bug → ask network (5) and reproducibility (7).
+- Skip the rest. They default to "unknown" in the report.
+
+**Tier 3 — Evidence (offer, don't demand).**
+
+- Item 8 (logs, screenshots, video, stack trace). Phrase as an offer: "If you have a screenshot or the exact error text, drop it in — otherwise I'll mark Evidence as 'none provided'." Never block on this.
+
+### How to actually ask
+
+When Tier 1 items are missing, ask the user **in one short, friendly message**:
+
+- Lead with one plain sentence: "I need 3 quick things to write this up properly."
+- Then a tight numbered list of *only* the Tier 1 gaps (skip items the user already gave).
+- For each, give a one-line example of the format expected (e.g. "App version: Settings → About → 'App version' — looks like `123.0.0.12`").
+- End with a permission to be approximate: "Rough answers are fine — 'iPhone, recent iOS' beats nothing."
+
+**Do not** mix Tier 2 questions into this first ask. They come in a follow-up after the user answers Tier 1 — and only if they're relevant.
+
+After the user replies, decide:
+- If Tier 1 is now satisfied → ask at most one short Tier 2 follow-up if the bug shape clearly warrants it, **or** proceed to write the report. Default to writing.
+- If Tier 1 is still incomplete → ask only the still-missing items, briefly.
+- If the user says "I don't know" / "skip it" / "just write what we have" → respect it. Mark unknowns honestly in the report and proceed.
+
+### Examples of the right first ask
+
+**Good (Tier 1 only, friendly, with format hints):**
+
+> Couple of quick things and I'll write it up:
+>
+> 1. **What happened, step by step?** e.g. "Opened a friend's photo post in feed → tapped 'Comment' → typed text → tapped Send → nothing happened, comment never appeared."
+> 2. **App version** (Settings → Help → About → App version) — e.g. `452.1.0.34`.
+> 3. **Device + OS** — e.g. "iPhone 14 Pro, iOS 17.5.1".
+>
+> Rough answers are fine.
+
+**Bad (what NOT to do):**
+
+> Please provide: 1. Steps to reproduce 2. App version 3. Device 4. OS 5. Account type 6. Network 7. App state 8. Reproducibility rate 9. Logs 10. Workaround tried
+
+The bad version is what an issue-tracker template looks like. The skill exists *because* templates feel like work and people skip fields. Don't recreate the template at the user.
 
 ## Step 2 — Apply severity & priority rubric
 
