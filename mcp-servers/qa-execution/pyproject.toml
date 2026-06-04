@@ -1,7 +1,7 @@
 [project]
 name = "qa-execution"
-version = "0.2.0"
-description = "MCP server providing web + API + iOS execution primitives for QA work (Playwright + Appium)."
+version = "0.3.0"
+description = "MCP server providing web + API + iOS + Android execution primitives for QA work (Playwright + Appium + adb)."
 readme = "README.md"
 requires-python = ">=3.10"
 dependencies = [

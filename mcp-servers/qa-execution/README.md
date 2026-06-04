@@ -1,8 +1,8 @@
 # qa-execution
 
-MCP server providing web + API + iOS execution primitives for QA work, built on Playwright + httpx + Appium.
+MCP server providing web + API + iOS + Android execution primitives for QA work, built on Playwright + httpx + Appium (iOS) + direct `adb` (Android).
 
-## Tools (26)
+## Tools (38)
 
 ### Web + API (15)
 
@@ -24,13 +24,18 @@ MCP server providing web + API + iOS execution primitives for QA work, built on 
 | `api_request(method, url, ...)` | HTTP request for API testing |
 | `test_run(path)` | Run a YAML test file (web + API only — iOS YAML support is roadmap) |
 
-### iOS (Appium) (11)
+### Cross-platform device session (3)
 
 | Tool | Purpose |
 |---|---|
-| `device_allocate(platform, version?, device_name?, app?, bundle_id?)` | Start an Appium session against an iOS Simulator; returns a token |
-| `device_release(token)` | Close the Appium session for `token` |
-| `device_list()` | List active device sessions |
+| `device_allocate(platform, ...)` | Start a session against iOS Simulator or Android emulator; returns a token. iOS args: `version`, `device_name`, `app`, `bundle_id`. Android args: `emulator_name`, `app`, `package`. |
+| `device_release(token)` | Close the session for `token` (iOS: quits Appium driver; Android: relinquishes the handle, emulator keeps running) |
+| `device_list()` | List active device sessions across platforms |
+
+### iOS (Appium) (9)
+
+| Tool | Purpose |
+|---|---|
 | `ios_tap(token, strategy, value, timeout_ms=10000)` | Tap an element |
 | `ios_type(token, strategy, value, text, clear=True, timeout_ms=10000)` | Type into an input |
 | `ios_assert_element(token, strategy, value, present=True, timeout_ms=5000)` | Assert presence/absence |
@@ -39,8 +44,29 @@ MCP server providing web + API + iOS execution primitives for QA work, built on 
 | `ios_screenshot(token, path?)` | Screenshot the device screen |
 | `ios_wait(token, strategy?, value?, timeout_ms=5000)` | Wait for an element or sleep |
 | `ios_scroll(token, direction="down")` | Scroll up / down / left / right |
+| `ios_logs(token, log_type="syslog", lines=200)` | Tail recent device logs (real-time debug) |
 
 iOS locator strategies: `accessibility_id` (preferred), `predicate`, `xpath`, `class_chain`.
+
+### Android (adb) (11)
+
+| Tool | Purpose |
+|---|---|
+| `android_tap(token, strategy, value, timeout_ms=10000)` | Tap an element (finds via uiautomator dump, taps center of bounds) |
+| `android_type(token, strategy, value, text, clear=True, timeout_ms=10000)` | Type into an input |
+| `android_assert_element(token, strategy, value, present=True, timeout_ms=5000)` | Assert presence/absence |
+| `android_assert_text(token, text, strategy?, value?, timeout_ms=5000)` | Assert text appears |
+| `android_inspect(token, limit=50)` | List elements with text / desc / resource-id |
+| `android_screenshot(token, path?)` | Screenshot via `adb exec-out screencap -p` |
+| `android_wait(token, strategy?, value?, timeout_ms=5000)` | Wait for an element or sleep |
+| `android_scroll(token, direction="down")` | Center-to-edge swipe; up/down/left/right |
+| `android_back(token)` | KEYCODE_BACK |
+| `android_home(token)` | KEYCODE_HOME |
+| `android_logcat(token, filter_expr?, lines=200, clear=False)` | Tail recent logcat output (real-time debug) |
+
+Android locator strategies: `text`, `accessibility_id` (content-desc), `resource_id` (e.g. `com.example:id/loginButton`), `xpath`.
+
+**Why adb-direct instead of Appium for Android?** No npm install needed (works on networks that block public package registries), no Appium server process to manage, simpler stack. Trade-off: no synchronization layer like Appium's, so flaky-test patterns are slightly different.
 
 ## What the agent can do (prompt → tools)
 
@@ -56,7 +82,9 @@ iOS locator strategies: `accessibility_id` (preferred), `predicate`, `xpath`, `c
 | Check API response | `api_request(method, url, expected_status=200)` |
 | Check logs | `web_navigate` → action → `web_logs(kind="network")` |
 | Test an iOS app | `device_allocate(platform="ios", bundle_id="...")` → `ios_inspect` → `ios_tap` / `ios_type` / `ios_assert_*` → `device_release` |
-| Test an Android app | **Roadmap (v0.3)** — Appium UIAutomator2 driver, `android_*` tools |
+| Tail iOS device logs | `ios_logs(token, log_type="syslog")` — call repeatedly to follow |
+| Test an Android app | `device_allocate(platform="android", emulator_name="Pixel_10_Pro_XL", package="com.android.settings")` → `android_inspect` → `android_tap` / `android_type` / `android_assert_*` → `device_release` |
+| Tail Android device logs | `android_logcat(token, filter_expr="MyApp:V *:S", lines=200)` — call repeatedly to follow |
 
 ## YAML test schema
 
@@ -134,6 +162,20 @@ claude mcp list
 
 You should see `qa-execution`. Restart your Claude Code session and the tools become available.
 
+### Android prerequisites (only if you'll use the `android_*` tools)
+
+1. **Android Studio** with the **Android SDK** + at least one **AVD** (Android Virtual Device). Easiest: install Android Studio from https://developer.android.com/studio, run it once, let it install the SDK to the default path (`~/Library/Android/sdk` on macOS), then create an AVD via Tools → Device Manager.
+2. **`adb` discoverable.** The driver looks in this order: `which adb`, `$ANDROID_HOME/platform-tools/adb`, `$ANDROID_SDK_ROOT/platform-tools/adb`, `~/Library/Android/sdk/platform-tools/adb`. If none match, set `ANDROID_HOME` or add platform-tools to your `PATH`.
+3. **No npm, no Appium needed.** Everything goes through `adb` directly.
+
+Verify Android prereqs:
+```bash
+adb version                       # or ~/Library/Android/sdk/platform-tools/adb version
+~/Library/Android/sdk/emulator/emulator -list-avds   # at least one AVD
+```
+
+The AVD doesn't need to be running before `device_allocate` — pass `emulator_name=<your AVD>` and the driver will boot it for you (~30-90s on first cold boot).
+
 ### iOS prerequisites (only if you'll use the `ios_*` tools)
 
 1. **Xcode + Command Line Tools** — install from the App Store, then `xcode-select --install`.
@@ -180,6 +222,12 @@ Use qa-execution: device_allocate platform=ios bundle_id=com.apple.mobilesafari,
 then ios_inspect, then ios_screenshot, then device_release.
 ```
 
+```
+Use qa-execution: device_allocate platform=android emulator_name=Pixel_10_Pro_XL
+package=com.android.settings, then android_inspect, then android_screenshot,
+then android_logcat lines=50, then device_release.
+```
+
 ## Where state lives
 
 - **Screenshots** — `~/qa-screenshots/<timestamp>.png` by default
@@ -189,20 +237,21 @@ then ios_inspect, then ios_screenshot, then device_release.
 ## Roadmap
 
 - **v0.1**: web + API, headless Chromium, single page session, YAML test runner
-- **v0.2** (current): iOS Simulator via Appium (`device_*` + `ios_*` tools)
-- **v0.3**: Android via Appium UIAutomator2 (`android_*` tools), iOS YAML test runner support
-- **v0.4**: CLI testing (`cli_*` tools), Chrome extension testing, real-device farm integration
+- **v0.2**: iOS Simulator via Appium (`device_*` + `ios_*` tools)
+- **v0.3** (current): Android emulator via direct `adb` (`android_*` tools, no Appium), `ios_logs` for iOS debug parity
+- **v0.4**: CLI testing (`cli_*` tools), Chrome extension testing, real-device farm integration, mobile YAML test runner support
 - Later: multiple tabs, headful toggle, request mocking/interception, video recording, parameterized tests
 
-## Limitations (v0.2)
+## Limitations (v0.3)
 
 - Single browser context per server process. Closing the server discards in-memory state — use `web_session_save` first if you need it back.
 - Network logs capture response metadata (status, method, URL) — not bodies.
 - No request mocking yet.
 - Browser is headless only — you'll see what's happening via screenshots and logs.
 - `api_request` supports JSON bodies only. Raw text/binary support is roadmap.
-- **iOS**: Simulator only (no real devices yet). Appium server runs externally — the MCP does not start/stop it. YAML test runner doesn't yet support `ios_*` actions; use the MCP tools directly.
-- No Android yet — v0.3.
+- **iOS**: Simulator only (no real devices yet). Appium server runs externally — the MCP does not start/stop it.
+- **Android**: emulator preferred; physical devices work too if listed by `adb devices`. The `android_type` clear-field uses 100 backspaces (simple, works across versions, but slow for large fields). Scrolling is swipe-based, not list-aware — for long lists, scroll repeatedly + inspect between scrolls.
+- **YAML test runner** (`test_run`) covers web + API only. Mobile actions in YAML are roadmap (v0.4) — for mobile tests today, drive the `ios_*` / `android_*` tools directly.
 
 ## Troubleshooting
 

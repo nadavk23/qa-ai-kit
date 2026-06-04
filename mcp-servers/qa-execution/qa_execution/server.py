@@ -11,12 +11,25 @@ from typing import Any
 import httpx
 from mcp.server.fastmcp import FastMCP
 
+from qa_execution.android import (
+    android_assert_element_sync,
+    android_assert_text_sync,
+    android_inspect_sync,
+    android_keyevent_sync,
+    android_logcat_sync,
+    android_screenshot_sync,
+    android_scroll_sync,
+    android_tap_sync,
+    android_type_sync,
+    android_wait_sync,
+)
 from qa_execution.browser import BrowserSession
 from qa_execution.mobile import (
     DeviceRegistry,
     ios_assert_element_sync,
     ios_assert_text_sync,
     ios_inspect_sync,
+    ios_logs_sync,
     ios_screenshot_sync,
     ios_scroll_sync,
     ios_tap_sync,
@@ -339,19 +352,26 @@ async def device_allocate(
     device_name: str | None = None,
     app: str | None = None,
     bundle_id: str | None = None,
+    emulator_name: str | None = None,
+    package: str | None = None,
 ) -> str:
-    """Allocate a mobile device session. Returns an opaque token used by ios_* tools.
+    """Allocate a mobile device session. Returns an opaque token used by ios_*/android_* tools.
 
-    platform: "ios" (only iOS Simulator is supported in this version)
-    version: e.g. "17.5" — defaults to whatever the simulator has
-    device_name: e.g. "iPhone 15" (default), "iPhone 15 Pro", "iPad Pro (12.9-inch)"
-    app: absolute path to a .app or .ipa to install before testing
-    bundle_id: bundle ID of an already-installed app (e.g. "com.apple.mobilesafari")
+    Common:
+      platform: "ios" or "android"
+      app: absolute path to a .app/.ipa (iOS) or .apk (Android)
 
-    Provide exactly one of `app` or `bundle_id`.
+    iOS-only:
+      version: e.g. "17.5" — defaults to whatever the simulator has
+      device_name: e.g. "iPhone 15" (default), "iPhone 15 Pro"
+      bundle_id: bundle ID of an installed app (e.g. "com.apple.mobilesafari")
+      Provide exactly one of `app` or `bundle_id`.
+      Requires Appium 2 + xcuitest driver running externally (default http://127.0.0.1:4723).
 
-    Requires an Appium 2 server running externally (default http://127.0.0.1:4723;
-    override via QA_APPIUM_URL). Install: `npm i -g appium && appium driver install xcuitest`.
+    Android-only:
+      emulator_name: AVD name to boot if no emulator is already running (e.g. "Pixel_10_Pro_XL")
+      package: launch this package after allocation (e.g. "com.android.settings")
+      Uses adb directly — no Appium server needed.
     """
     platform_norm = platform.lower()
     if platform_norm == "ios":
@@ -376,7 +396,23 @@ async def device_allocate(
             f"Pass this token to every ios_* tool. Call device_release when done."
         )
     if platform_norm == "android":
-        return "FAIL: Android support not yet implemented in this version."
+        try:
+            token, device = await devices.allocate_android(
+                emulator_name=emulator_name,
+                app=app,
+                package=package,
+            )
+        except (ValueError, FileNotFoundError) as e:
+            return f"FAIL: {e}"
+        except Exception as e:
+            return f"ERROR allocating Android device: {type(e).__name__}: {e}"
+        return (
+            f"Allocated Android device.\n"
+            f"  token: {token}\n"
+            f"  device_id: {device.device_id}\n"
+            f"  package: {device.package or '-'}\n"
+            f"Pass this token to every android_* tool. Call device_release when done."
+        )
     return f"FAIL: unknown platform {platform!r}. Expected 'ios' or 'android'."
 
 
@@ -557,6 +593,249 @@ async def ios_scroll(token: str, direction: str = "down") -> str:
     try:
         msg = await asyncio.to_thread(ios_scroll_sync, device, direction)
         return f"PASS: {msg}"
+    except Exception as e:
+        return f"FAIL: {type(e).__name__}: {e}"
+
+
+@mcp.tool()
+async def ios_logs(token: str, log_type: str = "syslog", lines: int = 200) -> str:
+    """Read recent iOS device logs — real-time debug primitive for iOS.
+
+    Mirrors `android_logcat`. Snapshot, not streaming — call repeatedly to follow.
+
+    log_type: typically "syslog" (device console) or "crashlog". Available types
+              depend on the Appium driver; if your choice isn't supported the
+              tool returns the list of valid options.
+    lines:    tail at most this many of the most recent entries (default 200).
+    """
+    try:
+        device = devices.get(token)
+    except KeyError as e:
+        return f"FAIL: {e}"
+    return await asyncio.to_thread(ios_logs_sync, device, log_type, lines)
+
+
+# ---------- Mobile (Android via adb) ----------
+
+@mcp.tool()
+async def android_tap(token: str, strategy: str, value: str, timeout_ms: int = 10000) -> str:
+    """Tap an element on the allocated Android device.
+
+    strategy: one of "text", "accessibility_id" (content-desc), "resource_id", "xpath"
+    value: the locator value
+        - text:             e.g. "Sign in"
+        - accessibility_id: e.g. "loginButton"
+        - resource_id:      e.g. "com.example:id/loginButton"
+        - xpath:            e.g. ".//*[@class='android.widget.Button'][@text='Sign in']"
+
+    Finds the element via `uiautomator dump`, computes the center of its bounds,
+    and sends `adb shell input tap <x> <y>`.
+    """
+    try:
+        device = devices.get(token)
+    except KeyError as e:
+        return f"FAIL: {e}"
+    try:
+        msg = await asyncio.to_thread(android_tap_sync, device, strategy, value, timeout_ms)
+        return f"PASS: {msg}"
+    except Exception as e:
+        return f"FAIL: {type(e).__name__}: {e}"
+
+
+@mcp.tool()
+async def android_type(
+    token: str,
+    strategy: str,
+    value: str,
+    text: str,
+    clear: bool = True,
+    timeout_ms: int = 10000,
+) -> str:
+    """Type `text` into the Android element matched by strategy/value.
+
+    Taps the element first (to focus), then sends `adb shell input text "..."`.
+    Spaces are encoded as %s per adb's input convention. By default clears the
+    field first via a burst of KEYCODE_DEL (works across Android versions).
+    """
+    try:
+        device = devices.get(token)
+    except KeyError as e:
+        return f"FAIL: {e}"
+    try:
+        msg = await asyncio.to_thread(
+            android_type_sync, device, strategy, value, text, clear, timeout_ms
+        )
+        return f"PASS: {msg}"
+    except Exception as e:
+        return f"FAIL: {type(e).__name__}: {e}"
+
+
+@mcp.tool()
+async def android_assert_element(
+    token: str,
+    strategy: str,
+    value: str,
+    present: bool = True,
+    timeout_ms: int = 5000,
+) -> str:
+    """Assert an Android element is present (or absent, with present=False). Returns PASS/FAIL."""
+    try:
+        device = devices.get(token)
+    except KeyError as e:
+        return f"FAIL: {e}"
+    ok, msg = await asyncio.to_thread(
+        android_assert_element_sync, device, strategy, value, present, timeout_ms
+    )
+    return f"{'PASS' if ok else 'FAIL'}: {msg}"
+
+
+@mcp.tool()
+async def android_assert_text(
+    token: str,
+    text: str,
+    strategy: str | None = None,
+    value: str | None = None,
+    timeout_ms: int = 5000,
+) -> str:
+    """Assert `text` appears on the Android screen.
+
+    If `strategy` + `value` are provided, only the matched element's text/desc
+    is checked. Otherwise the whole UI dump XML is scanned. Returns PASS/FAIL.
+    """
+    try:
+        device = devices.get(token)
+    except KeyError as e:
+        return f"FAIL: {e}"
+    ok, msg = await asyncio.to_thread(
+        android_assert_text_sync, device, text, strategy, value, timeout_ms
+    )
+    return f"{'PASS' if ok else 'FAIL'}: {msg}"
+
+
+@mcp.tool()
+async def android_inspect(token: str, limit: int = 50) -> str:
+    """Snapshot the current Android screen: list elements with text / desc / resource-id.
+
+    Run before android_tap / android_type to find the right locator values.
+    Returns up to `limit` elements that expose at least one of text, content-desc,
+    or resource-id — the attributes you'd locate them by.
+    """
+    try:
+        device = devices.get(token)
+    except KeyError as e:
+        return f"FAIL: {e}"
+    try:
+        return await asyncio.to_thread(android_inspect_sync, device, limit)
+    except Exception as e:
+        return f"FAIL: {type(e).__name__}: {e}"
+
+
+@mcp.tool()
+async def android_screenshot(token: str, path: str = "") -> str:
+    """Capture a screenshot of the Android device screen.
+
+    If `path` is empty, saves to ~/qa-screenshots/android-<timestamp>.png.
+    """
+    try:
+        device = devices.get(token)
+    except KeyError as e:
+        return f"FAIL: {e}"
+    if not path:
+        out_dir = Path.home() / "qa-screenshots"
+        out_dir.mkdir(exist_ok=True)
+        path = str(out_dir / f"android-{datetime.now().strftime('%Y%m%d-%H%M%S')}.png")
+    try:
+        await asyncio.to_thread(android_screenshot_sync, device, path)
+        return f"Screenshot saved: {path}"
+    except Exception as e:
+        return f"FAIL: {type(e).__name__}: {e}"
+
+
+@mcp.tool()
+async def android_wait(
+    token: str,
+    strategy: str | None = None,
+    value: str | None = None,
+    timeout_ms: int = 5000,
+) -> str:
+    """Wait for an Android element to appear, or sleep `timeout_ms` if no locator given."""
+    try:
+        device = devices.get(token)
+    except KeyError as e:
+        return f"FAIL: {e}"
+    ok, msg = await asyncio.to_thread(
+        android_wait_sync, device, strategy, value, timeout_ms
+    )
+    return f"{'PASS' if ok else 'FAIL'}: {msg}"
+
+
+@mcp.tool()
+async def android_scroll(token: str, direction: str = "down") -> str:
+    """Scroll the Android screen via a center-to-edge swipe. direction: up/down/left/right."""
+    try:
+        device = devices.get(token)
+    except KeyError as e:
+        return f"FAIL: {e}"
+    try:
+        msg = await asyncio.to_thread(android_scroll_sync, device, direction)
+        return f"PASS: {msg}"
+    except Exception as e:
+        return f"FAIL: {type(e).__name__}: {e}"
+
+
+@mcp.tool()
+async def android_back(token: str) -> str:
+    """Press the Android back button (KEYCODE_BACK)."""
+    try:
+        device = devices.get(token)
+    except KeyError as e:
+        return f"FAIL: {e}"
+    try:
+        msg = await asyncio.to_thread(android_keyevent_sync, device, "back")
+        return f"PASS: {msg}"
+    except Exception as e:
+        return f"FAIL: {type(e).__name__}: {e}"
+
+
+@mcp.tool()
+async def android_home(token: str) -> str:
+    """Press the Android home button (KEYCODE_HOME)."""
+    try:
+        device = devices.get(token)
+    except KeyError as e:
+        return f"FAIL: {e}"
+    try:
+        msg = await asyncio.to_thread(android_keyevent_sync, device, "home")
+        return f"PASS: {msg}"
+    except Exception as e:
+        return f"FAIL: {type(e).__name__}: {e}"
+
+
+@mcp.tool()
+async def android_logcat(
+    token: str,
+    filter_expr: str | None = None,
+    lines: int = 200,
+    clear: bool = False,
+) -> str:
+    """Tail recent Android logcat output — primary real-time debug primitive for Android.
+
+    filter_expr: standard logcat tag-priority spec, e.g. "MyApp:V *:S" to show
+                 verbose-from-MyApp and silence everything else. Omit to show all.
+    lines: how many recent lines to return (default 200, max useful ~1000).
+    clear: if True, clears the logcat buffer instead of reading (returns confirmation).
+
+    Internally runs `adb -s <id> logcat -d -t <lines> [filter]`. Non-streaming —
+    each call is a snapshot, not a live tail. Call repeatedly to follow.
+    """
+    try:
+        device = devices.get(token)
+    except KeyError as e:
+        return f"FAIL: {e}"
+    try:
+        return await asyncio.to_thread(
+            android_logcat_sync, device, filter_expr, lines, clear
+        )
     except Exception as e:
         return f"FAIL: {type(e).__name__}: {e}"
 

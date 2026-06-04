@@ -67,11 +67,17 @@ class MobileDevice:
 
 
 class DeviceRegistry:
-    """Token-keyed registry of allocated mobile devices. One instance per server."""
+    """Token-keyed registry of allocated mobile devices. One instance per server.
+
+    Holds both iOS sessions (MobileDevice — Appium-backed) and Android sessions
+    (AndroidDevice from qa_execution.android — adb-backed). Tools dispatch on
+    `device.platform`. The Android module is imported lazily so iOS-only users
+    don't need the Android SDK present.
+    """
 
     def __init__(self) -> None:
         self._lock = asyncio.Lock()
-        self._devices: dict[str, MobileDevice] = {}
+        self._devices: dict[str, Any] = {}  # MobileDevice | AndroidDevice
 
     async def allocate_ios(
         self,
@@ -114,18 +120,38 @@ class DeviceRegistry:
             self._devices[token] = device
         return token, device
 
+    async def allocate_android(
+        self,
+        emulator_name: str | None,
+        app: str | None,
+        package: str | None,
+    ) -> tuple[str, Any]:
+        from qa_execution.android import AndroidAllocator  # lazy import
+
+        token, device = await AndroidAllocator.allocate(emulator_name, app, package)
+        async with self._lock:
+            self._devices[token] = device
+        return token, device
+
     async def release(self, token: str) -> bool:
         async with self._lock:
             device = self._devices.pop(token, None)
         if device is None:
             return False
-        try:
-            await asyncio.to_thread(device.driver.quit)
-        except WebDriverException:
+        platform = getattr(device, "platform", None)
+        if platform == "ios":
+            try:
+                await asyncio.to_thread(device.driver.quit)
+            except WebDriverException:
+                pass
+        elif platform == "android":
+            # If we started the emulator, leave it running — releasing the token
+            # only relinquishes our handle to it. User can kill the emulator via
+            # the AVD manager or `adb emu kill` when they're done.
             pass
         return True
 
-    def get(self, token: str) -> MobileDevice:
+    def get(self, token: str) -> Any:
         device = self._devices.get(token)
         if device is None:
             raise KeyError(
@@ -135,17 +161,32 @@ class DeviceRegistry:
         return device
 
     def list(self) -> list[dict[str, Any]]:
-        return [
-            {
-                "token": tk,
-                "platform": d.platform,
-                "device_name": d.device_name,
-                "version": d.version,
-                "app": d.app,
-                "bundle_id": d.bundle_id,
-            }
-            for tk, d in self._devices.items()
-        ]
+        out: list[dict[str, Any]] = []
+        for tk, d in self._devices.items():
+            platform = getattr(d, "platform", "unknown")
+            if platform == "ios":
+                out.append(
+                    {
+                        "token": tk,
+                        "platform": "ios",
+                        "device_name": d.device_name,
+                        "version": d.version,
+                        "app": d.app,
+                        "bundle_id": d.bundle_id,
+                    }
+                )
+            elif platform == "android":
+                out.append(
+                    {
+                        "token": tk,
+                        "platform": "android",
+                        "device_id": d.device_id,
+                        "package": d.package,
+                    }
+                )
+            else:
+                out.append({"token": tk, "platform": platform})
+        return out
 
 
 # ---------- sync iOS action helpers (run via asyncio.to_thread) ----------
@@ -310,3 +351,37 @@ def ios_scroll_sync(device: MobileDevice, direction: str) -> str:
         )
     device.driver.execute_script("mobile: swipe", {"direction": direction})
     return f"scrolled {direction}"
+
+
+def ios_logs_sync(
+    device: MobileDevice, log_type: str, limit: int
+) -> str:
+    """Read recent iOS device logs via Appium's driver.get_log().
+
+    log_type: typically "syslog" (device console) or "crashlog". The exact set
+              depends on the Appium driver — common values: syslog, crashlog,
+              performance, server, safariConsole.
+    limit:    return up to this many of the most recent entries (tail).
+    """
+    try:
+        available = device.driver.get_log_types()
+    except Exception as e:
+        return f"FAIL: driver.get_log_types unavailable ({type(e).__name__}: {e})"
+    if log_type not in available:
+        return (
+            f"FAIL: log type {log_type!r} not exposed by this driver. "
+            f"Available: {available}"
+        )
+    try:
+        entries = device.driver.get_log(log_type)
+    except Exception as e:
+        return f"FAIL: driver.get_log({log_type!r}) failed: {type(e).__name__}: {e}"
+    if not entries:
+        return f"(no {log_type} entries)"
+    lines: list[str] = []
+    for entry in entries[-limit:]:
+        ts = entry.get("timestamp", "")
+        lvl = entry.get("level", "")
+        msg = entry.get("message", "")
+        lines.append(f"{ts} [{lvl}] {msg}".rstrip())
+    return "\n".join(lines)

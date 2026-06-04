@@ -18,13 +18,15 @@ Auto-trigger inside Claude Code when their description matches your message. Ins
 
 | Server | Version | Tools | Surfaces covered |
 |---|---|---|---|
-| **`qa-execution`** | 0.2.0 | 26 | Web (Playwright) · API (httpx) · iOS Simulator (Appium) |
+| **`qa-execution`** | 0.3.0 | 38 | Web (Playwright) · API (httpx) · iOS Simulator (Appium) · Android emulator (direct `adb`, no Appium) |
 
 **`qa-execution` tool breakdown:**
-- **Web + API (15)** — `ping`, `web_navigate`, `web_inspect`, `web_click`, `web_type`, `web_assert_text`, `web_assert_element`, `web_screenshot`, `web_wait`, `web_logs`, `web_session_save`, `web_session_load`, `web_batch`, `api_request`, `test_run`
-- **iOS (11)** — `device_allocate`, `device_release`, `device_list`, `ios_tap`, `ios_type`, `ios_assert_element`, `ios_assert_text`, `ios_inspect`, `ios_screenshot`, `ios_wait`, `ios_scroll`
+- **Web + API (15)** — `ping`, `web_*` (12), `api_request`, `test_run`
+- **Device session (3)** — `device_allocate`, `device_release`, `device_list` (cross-platform: iOS + Android)
+- **iOS (9)** — `ios_tap`, `ios_type`, `ios_assert_element`, `ios_assert_text`, `ios_inspect`, `ios_screenshot`, `ios_wait`, `ios_scroll`, `ios_logs` *(real-time debug — log tail)*
+- **Android (11)** — `android_tap`, `android_type`, `android_assert_element`, `android_assert_text`, `android_inspect`, `android_screenshot`, `android_wait`, `android_scroll`, `android_back`, `android_home`, `android_logcat` *(real-time debug — log tail)*
 
-Roadmap: Android (v0.3), CLI + Chrome extension testing (v0.4). See [`mcp-servers/qa-execution/README.md`](mcp-servers/qa-execution/README.md) for the full tool reference.
+Roadmap: CLI + Chrome extension testing (v0.4), real-device farm integration. See [`mcp-servers/qa-execution/README.md`](mcp-servers/qa-execution/README.md) for the full tool reference.
 
 ## Layout
 
@@ -54,6 +56,22 @@ QA AI KIT/
 | **git** | Repo + commits | Usually preinstalled; otherwise `xcode-select --install` |
 | **Claude Code** | Hosts the skills + MCP servers | https://docs.claude.com/en/docs/claude-code |
 
+### Required for Android testing (only if you'll use the `android_*` MCP tools)
+
+| Tool | Why | Install |
+|---|---|---|
+| **Android Studio + SDK** | Provides the emulator, `adb`, and AVD management | https://developer.android.com/studio (run once to install SDK) |
+| **At least one AVD** | An emulator image to test against | Android Studio → Tools → Device Manager → Create Device |
+| **`adb` discoverable** | The MCP looks in `which adb` / `$ANDROID_HOME/platform-tools` / `~/Library/Android/sdk/platform-tools` | Set `ANDROID_HOME` or add to `PATH` if not in defaults |
+
+**No npm or Appium needed for Android** — the driver uses `adb` directly. This was a deliberate choice so the kit keeps working on corporate networks that block public package registries.
+
+Verify Android prereqs:
+```bash
+adb version
+~/Library/Android/sdk/emulator/emulator -list-avds   # at least one AVD listed
+```
+
 ### Required for iOS testing (only if you'll use the `ios_*` MCP tools)
 
 | Tool | Why | Install |
@@ -71,6 +89,8 @@ appium --version          # 2.x
 appium driver list --installed   # should include xcuitest
 xcrun simctl list devices         # at least one iPhone runtime
 ```
+
+> **Note on corporate networks:** `npm install -g appium` is commonly blocked by enterprise firewalls (e.g. on Wix laptops). If that's you, install Appium from a personal network for ~5 min — the Appium server itself runs locally afterward and needs no further network.
 
 ### Optional
 
@@ -120,6 +140,8 @@ Open Claude Code with this folder as the working directory, then ask in natural 
 | Generate Pilot code from a plan | *"convert this plan to Pilot tests"* + paste / link a plan with cases |
 | Run a web test | *"use qa-execution to navigate to X, type Y, assert Z"* |
 | Run an iOS test | *"device_allocate platform=ios bundle_id=com.apple.mobilesafari, then ios_inspect"* |
+| Run an Android test | *"device_allocate platform=android emulator_name=Pixel_10_Pro_XL package=com.android.settings, then android_inspect"* |
+| Debug live (tail device logs) | *"call ios_logs"* / *"call android_logcat with filter MyApp:V \*:S"* |
 | Restore the kit on a new machine | Follow [`RECOVERY.md`](RECOVERY.md) |
 
 ## See also
