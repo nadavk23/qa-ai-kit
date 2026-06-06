@@ -1,6 +1,7 @@
 """YAML test runner — used by both `test_run` and `web_batch` MCP tools."""
 
 import asyncio
+import json
 from datetime import datetime
 from pathlib import Path
 from typing import Any
@@ -128,6 +129,170 @@ async def _do_api_request(session: BrowserSession, step: dict[str, Any]) -> str:
     return f"API {method} {url} → {resp.status_code}"
 
 
+async def _do_graphql(session: BrowserSession, step: dict[str, Any]) -> str:
+    url = step["url"]
+    query = step["query"]
+    variables = step.get("variables", {})
+    operation_name = step.get("operation_name")
+    headers = step.get("headers", {})
+    headers.setdefault("Content-Type", "application/json")
+    expected_status = step.get("expected_status", 200)
+
+    body: dict[str, Any] = {"query": query}
+    if variables:
+        body["variables"] = variables
+    if operation_name:
+        body["operationName"] = operation_name
+
+    async with httpx.AsyncClient(timeout=30.0) as client:
+        resp = await client.post(url, json=body, headers=headers)
+
+    if resp.status_code != expected_status:
+        raise TestFailure(
+            f"GraphQL {operation_name or 'query'}: expected status {expected_status}, "
+            f"got {resp.status_code}"
+        )
+
+    try:
+        data = resp.json()
+        if "errors" in data and data["errors"]:
+            raise TestFailure(f"GraphQL errors: {data['errors']}")
+    except Exception as e:
+        raise TestFailure(f"GraphQL response parse error: {type(e).__name__}: {e}")
+
+    if step.get("assert_path"):
+        path = step["assert_path"]
+        expected_value = step.get("assert_value")
+        actual = _extract_json_path(data, path)
+        if actual != expected_value:
+            raise TestFailure(
+                f"GraphQL path {path}: expected {expected_value!r}, got {actual!r}"
+            )
+
+    return f"GraphQL {operation_name or 'query'} → {resp.status_code}"
+
+
+def _extract_json_path(obj: Any, path: str) -> Any:
+    """Simple JSON path extraction (e.g., 'data.user.id')."""
+    keys = path.split(".")
+    current = obj
+    for key in keys:
+        if isinstance(current, dict):
+            current = current.get(key)
+        else:
+            return None
+    return current
+
+
+async def _do_ws_connect(session: BrowserSession, step: dict[str, Any]) -> str:
+    url = step["url"]
+    headers = step.get("headers", {})
+
+    from qa_execution.ws_runner import WebSocketClient
+
+    if not hasattr(session, "ws_connections"):
+        session.ws_connections = {}
+
+    conn_id = step.get("connection_id", "default")
+    ws_client = WebSocketClient(url, headers)
+    await ws_client.connect()
+    session.ws_connections[conn_id] = ws_client
+
+    return f"WebSocket connected to {url}"
+
+
+async def _do_ws_send(session: BrowserSession, step: dict[str, Any]) -> str:
+    conn_id = step.get("connection_id", "default")
+    message = step["message"]
+
+    if not hasattr(session, "ws_connections"):
+        raise TestFailure("No WebSocket connections. Call ws_connect first.")
+
+    ws = session.ws_connections.get(conn_id)
+    if not ws:
+        raise TestFailure(
+            f"WebSocket connection '{conn_id}' not found. Call ws_connect first."
+        )
+
+    await ws.send(message)
+
+    if step.get("wait_response"):
+        timeout = step.get("timeout_ms", 5000) / 1000
+        response = await ws.recv(timeout=timeout)
+        session.ws_last_response = response
+        return f"WebSocket sent message and received: {response[:50]}"
+
+    return f"WebSocket sent message"
+
+
+async def _do_ws_recv(session: BrowserSession, step: dict[str, Any]) -> str:
+    conn_id = step.get("connection_id", "default")
+    timeout = step.get("timeout_ms", 5000) / 1000
+
+    if not hasattr(session, "ws_connections"):
+        raise TestFailure("No WebSocket connections. Call ws_connect first.")
+
+    ws = session.ws_connections.get(conn_id)
+    if not ws:
+        raise TestFailure(
+            f"WebSocket connection '{conn_id}' not found. Call ws_connect first."
+        )
+
+    try:
+        message = await ws.recv(timeout=timeout)
+        session.ws_last_response = message
+        return f"WebSocket received: {message[:100]}"
+    except TimeoutError:
+        raise TestFailure(f"WebSocket recv timeout after {timeout}s")
+
+
+async def _do_assert_ws_message(session: BrowserSession, step: dict[str, Any]) -> str:
+    if not hasattr(session, "ws_last_response"):
+        raise TestFailure("No WebSocket message received. Call ws_send or ws_recv first.")
+
+    message = session.ws_last_response
+    expected_text = step.get("contains")
+    expected_json_path = step.get("assert_path")
+
+    if expected_text:
+        if expected_text not in message:
+            raise TestFailure(
+                f"WebSocket message does not contain '{expected_text}'. Got: {message}"
+            )
+    elif expected_json_path:
+        try:
+            data = json.loads(message) if isinstance(message, str) else message
+        except (json.JSONDecodeError, ValueError):
+            raise TestFailure(
+                f"WebSocket message is not valid JSON: {message}"
+            )
+
+        actual = _extract_json_path(data, expected_json_path)
+        expected_value = step.get("assert_value")
+        if actual != expected_value:
+            raise TestFailure(
+                f"WebSocket JSON path {expected_json_path}: expected {expected_value!r}, "
+                f"got {actual!r}"
+            )
+
+    return f"WebSocket message assertion passed"
+
+
+async def _do_ws_close(session: BrowserSession, step: dict[str, Any]) -> str:
+    conn_id = step.get("connection_id", "default")
+
+    if not hasattr(session, "ws_connections"):
+        return "No WebSocket connections to close"
+
+    ws = session.ws_connections.pop(conn_id, None)
+    if ws:
+        await ws.close()
+        return f"WebSocket connection '{conn_id}' closed"
+
+    return f"WebSocket connection '{conn_id}' not found"
+
+
+
 ACTIONS = {
     "navigate": _do_navigate,
     "click": _do_click,
@@ -139,6 +304,12 @@ ACTIONS = {
     "session_save": _do_session_save,
     "session_load": _do_session_load,
     "api_request": _do_api_request,
+    "graphql": _do_graphql,
+    "ws_connect": _do_ws_connect,
+    "ws_send": _do_ws_send,
+    "ws_recv": _do_ws_recv,
+    "assert_ws_message": _do_assert_ws_message,
+    "ws_close": _do_ws_close,
 }
 
 

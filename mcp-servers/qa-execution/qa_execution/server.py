@@ -298,6 +298,70 @@ async def api_request(
 
 
 @mcp.tool()
+async def graphql_request(
+    url: str,
+    query: str,
+    variables: dict[str, Any] | None = None,
+    operation_name: str | None = None,
+    headers: dict[str, str] | None = None,
+    expected_status: int | None = None,
+) -> str:
+    """Execute a GraphQL query against a server endpoint.
+
+    url: GraphQL endpoint URL (must include http:// or https://)
+    query: GraphQL query string (can include variables placeholders like $id)
+    variables: dict of variable values (optional, e.g. {"id": "123"})
+    operation_name: name of the operation to execute (optional, for multi-op queries)
+    headers: dict of header name → value (optional, e.g. for auth tokens)
+    expected_status: if set, response is graded PASS/FAIL against it (optional)
+
+    Returns status code, Content-Type, and response body (truncated to 4KB).
+    """
+    if headers is None:
+        headers = {}
+    headers.setdefault("Content-Type", "application/json")
+
+    body: dict[str, Any] = {"query": query}
+    if variables:
+        body["variables"] = variables
+    if operation_name:
+        body["operationName"] = operation_name
+
+    async with httpx.AsyncClient(timeout=30.0) as client:
+        try:
+            resp = await client.post(url, json=body, headers=headers)
+        except Exception as e:
+            return f"GRAPHQL ERROR: {type(e).__name__}: {e}"
+
+    body_text = resp.text[:4096]
+    if len(resp.text) > 4096:
+        body_text += f"\n... (truncated; total {len(resp.text)} bytes)"
+
+    verdict = ""
+    if expected_status is not None:
+        ok = resp.status_code == expected_status
+        verdict = (
+            f"\nVERDICT: {'PASS' if ok else 'FAIL'} "
+            f"(expected {expected_status}, got {resp.status_code})"
+        )
+
+    try:
+        data = resp.json()
+        if "errors" in data and data["errors"]:
+            errors_str = str(data["errors"])
+            verdict += f"\nGQL ERRORS: {errors_str}"
+    except Exception:
+        pass
+
+    return (
+        f"POST {url} (GraphQL) → {resp.status_code}\n"
+        f"Content-Type: {resp.headers.get('content-type', 'n/a')}\n"
+        f"Body:\n{body_text}"
+        f"{verdict}"
+    )
+
+
+@mcp.tool()
 async def web_batch(actions: list[dict[str, Any]], on_failure: str = "stop") -> str:
     """Execute multiple actions in sequence in a single call.
 
@@ -312,6 +376,7 @@ async def web_batch(actions: list[dict[str, Any]], on_failure: str = "stop") -> 
       - {"action": "session_save", "name": "..."}
       - {"action": "session_load", "name": "..."}
       - {"action": "api_request", "method": "GET", "url": "..."}
+      - {"action": "graphql", "url": "...", "query": "...", "variables": {...}}
 
     on_failure: 'stop' (default) or 'continue'.
     Returns step-by-step results with PASS/FAIL/ERROR per step.
