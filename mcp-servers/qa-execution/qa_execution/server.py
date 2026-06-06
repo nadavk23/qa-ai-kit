@@ -36,6 +36,7 @@ from qa_execution.mobile import (
     ios_type_sync,
     ios_wait_sync,
 )
+from qa_execution.mobile_runner import run_mobile_steps
 from qa_execution.yaml_runner import run_steps, run_yaml_test
 
 mcp = FastMCP("qa-execution")
@@ -325,22 +326,74 @@ async def web_batch(actions: list[dict[str, Any]], on_failure: str = "stop") -> 
 
 @mcp.tool()
 async def test_run(path: str) -> str:
-    """Run a YAML test file. Returns step-by-step results + overall verdict.
+    """Run a YAML test file (web, iOS, or Android). Returns step results + verdict.
 
-    YAML schema:
-      name: str              # test name (required)
-      description: str       # optional
-      on_failure: stop|continue  # default: stop
+    The `platform` field selects the backend (default `web`):
+
+    Web / API (platform omitted or `web`):
+      name: str
+      on_failure: stop|continue   # default: stop
       steps:
-        - action: <one of the actions listed in web_batch>
+        - action: <navigate|click|type|assert_text|assert_element|wait|
+                    screenshot|session_save|session_load|api_request>
           ...action args
 
-    See QA AI KIT/mcp-servers/qa-execution/tests/web/example-login.yaml for a sample.
+    Mobile (platform: ios | android) — a fresh device session is allocated from
+    the `target:` block, the steps run, then the session is always released:
+      name: str
+      platform: ios            # or: android
+      target:
+        # iOS:     device_name, version, app OR bundle_id
+        # Android: emulator_name, app, package
+        bundle_id: com.apple.Preferences
+      on_failure: stop|continue
+      steps:
+        - action: <tap|type|assert_text|assert_element|wait|scroll|
+                    screenshot|back|home|logs>
+          ...action args   # tap/type use strategy+value, like the ios_/android_ tools
 
-    Note: this runner currently supports web + API actions only. iOS YAML support
-    is a roadmap item — for iOS tests in this version, drive the ios_* tools directly.
+    See tests/web/example-login.yaml (web), tests/mobile/ios-settings.yaml, and
+    tests/mobile/android-settings.yaml for samples.
     """
-    return await run_yaml_test(path, session)
+    return await run_yaml_test(path, session, devices)
+
+
+@mcp.tool()
+async def mobile_batch(
+    token: str, actions: list[dict[str, Any]], on_failure: str = "stop"
+) -> str:
+    """Execute multiple mobile actions in sequence against an allocated device.
+
+    The mobile analogue of `web_batch`: pass the `token` from `device_allocate`
+    (iOS or Android) and a list of action dicts. Each action is shaped like
+    `{"action": "<name>", ...args}`. Available actions (platform support noted):
+      - {"action": "tap", "strategy": "...", "value": "...", "timeout_ms"?}        [ios, android]
+      - {"action": "type", "strategy": "...", "value": "...", "text": "...", "clear"?}  [ios, android]
+      - {"action": "assert_element", "strategy": "...", "value": "...", "present"?}  [ios, android]
+      - {"action": "assert_text", "text": "...", "strategy"?, "value"?}             [ios, android]
+      - {"action": "wait", "strategy"?, "value"?, "timeout_ms"?}                    [ios, android]
+      - {"action": "scroll", "direction": "up|down|left|right"}                     [ios, android]
+      - {"action": "screenshot", "path"?}                                          [ios, android]
+      - {"action": "back"} / {"action": "home"}                                    [android]
+      - {"action": "logs", "lines"?, "log_type"?(ios), "filter_expr"?(android)}    [ios, android]
+
+    Locator strategies match the per-platform tools: iOS uses accessibility_id /
+    predicate / xpath / class_chain; Android uses text / accessibility_id /
+    resource_id / xpath.
+
+    on_failure: 'stop' (default) or 'continue'.
+    Returns step-by-step PASS/FAIL/ERROR/SKIP results plus a batch verdict.
+    """
+    try:
+        device = devices.get(token)
+    except KeyError as e:
+        return f"FAIL: {e}"
+    lines, passed, failed, skipped = await run_mobile_steps(device, actions, on_failure)
+    verdict = "PASS" if failed == 0 else "FAIL"
+    lines.append(
+        f"\nBatch verdict: {verdict} ({passed} passed, {failed} failed, {skipped} skipped)"
+    )
+    return "\n".join(lines)
 
 
 # ---------- Mobile (iOS via Appium) ----------

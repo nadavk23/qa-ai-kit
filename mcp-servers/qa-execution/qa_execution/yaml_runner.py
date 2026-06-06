@@ -9,10 +9,9 @@ import httpx
 import yaml
 
 from qa_execution.browser import BrowserSession
+from qa_execution.runner_base import TestFailure  # re-exported for callers
 
-
-class TestFailure(Exception):
-    """Raised by an action when its assertion fails. Distinct from unexpected errors."""
+__all__ = ["TestFailure", "run_steps", "run_yaml_test", "ACTIONS"]
 
 
 async def _do_navigate(session: BrowserSession, step: dict[str, Any]) -> str:
@@ -176,7 +175,7 @@ async def run_steps(
     return lines, passed, failed, skipped
 
 
-async def run_yaml_test(path: str, session: BrowserSession) -> str:
+async def run_yaml_test(path: str, session: BrowserSession, devices: Any = None) -> str:
     p = Path(path).expanduser()
     if not p.exists():
         return f"FAIL: test file not found: {path}"
@@ -185,10 +184,76 @@ async def run_yaml_test(path: str, session: BrowserSession) -> str:
     name = spec.get("name", p.stem)
     on_failure = spec.get("on_failure", "stop")
     steps = spec.get("steps", [])
+    platform = str(spec.get("platform", "web")).lower()
 
-    lines = [f"=== Test: {name} ===", f"File: {p}"]
+    if platform in ("ios", "android"):
+        return await _run_mobile_yaml(p, name, platform, spec, steps, on_failure, devices)
+
+    lines = [f"=== Test: {name} (web) ===", f"File: {p}"]
     step_lines, passed, failed, skipped = await run_steps(session, steps, on_failure)
     lines.extend(step_lines)
     verdict = "PASS" if failed == 0 else "FAIL"
     lines.append(f"\nVerdict: {verdict} ({passed} passed, {failed} failed, {skipped} skipped)")
     return "\n".join(lines)
+
+
+async def _run_mobile_yaml(
+    p: Path,
+    name: str,
+    platform: str,
+    spec: dict[str, Any],
+    steps: list[dict[str, Any]],
+    on_failure: str,
+    devices: Any,
+) -> str:
+    """Run a mobile (`platform: ios|android`) YAML test.
+
+    Allocates a fresh device session from the spec's `target:` block, runs the
+    steps via the mobile runner, then always releases the session. `devices`
+    must be the server's DeviceRegistry.
+    """
+    from qa_execution.mobile_runner import run_mobile_steps
+
+    if devices is None:
+        return (
+            f"FAIL: test {name!r} declares platform={platform!r} but no device "
+            f"registry was provided to the runner."
+        )
+    target = spec.get("target", {}) or {}
+
+    lines = [f"=== Test: {name} ({platform}) ===", f"File: {p}"]
+    token = None
+    try:
+        if platform == "ios":
+            token, _device = await devices.allocate_ios(
+                version=target.get("version"),
+                device_name=target.get("device_name"),
+                app=target.get("app"),
+                bundle_id=target.get("bundle_id"),
+            )
+        else:  # android
+            token, _device = await devices.allocate_android(
+                emulator_name=target.get("emulator_name"),
+                app=target.get("app"),
+                package=target.get("package"),
+            )
+    except Exception as e:
+        lines.append(f"SETUP ERROR: could not allocate {platform} device: "
+                     f"{type(e).__name__}: {e}")
+        lines.append("\nVerdict: FAIL (device allocation failed)")
+        return "\n".join(lines)
+
+    try:
+        device = devices.get(token)
+        step_lines, passed, failed, skipped = await run_mobile_steps(
+            device, steps, on_failure
+        )
+        lines.extend(step_lines)
+        verdict = "PASS" if failed == 0 else "FAIL"
+        lines.append(
+            f"\nVerdict: {verdict} ({passed} passed, {failed} failed, {skipped} skipped)"
+        )
+        return "\n".join(lines)
+    finally:
+        if token is not None:
+            await devices.release(token)
