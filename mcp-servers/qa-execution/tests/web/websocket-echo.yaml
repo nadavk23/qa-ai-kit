@@ -1,0 +1,24 @@
+name: WebSocket Echo Test
+url: ws://localhost:8080
+---
+- action: ws_connect
+  url: ws://localhost:8080/events
+  connection_id: events
+- action: ws_send
+  connection_id: events
+  message: '{"type":"subscribe","channel":"updates"}'
+  wait_response: true
+  timeout_ms: 5000
+- action: assert_ws_message
+  contains: '{"type":"subscribed"}'
+- action: ws_send
+  connection_id: events
+  message: '{"type":"ping"}'
+- action: ws_recv
+  connection_id: events
+  timeout_ms: 5000
+- action: assert_ws_message
+  assert_path: type
+  assert_value: pong
+- action: ws_close
+  connection_id: events

@@ -9,3 +9,4 @@ build/
 .qa-execution/
 *.swp
 .DS_Store
+.venv-test/

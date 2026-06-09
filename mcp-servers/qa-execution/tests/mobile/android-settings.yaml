@@ -1,0 +1,21 @@
+name: Android Settings smoke
+description: >
+  Launches the built-in Settings app on an Android emulator/device and verifies
+  a couple of rows. Mirrors the iOS sample. The driver boots `emulator_name` if
+  no device is already attached (see the Android prerequisites in the README).
+platform: android
+target:
+  emulator_name: Pixel_7_API_36   # an AVD from `emulator -list-avds`; omit if a device is already attached
+  package: com.android.settings
+on_failure: stop
+steps:
+  - action: assert_text
+    text: Network & internet
+    timeout_ms: 8000
+  - action: scroll
+    direction: down
+  - action: assert_text
+    text: System
+    timeout_ms: 8000
+  - action: screenshot
+    path: artifacts/android-settings.png

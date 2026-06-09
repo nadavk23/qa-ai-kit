@@ -13,6 +13,14 @@ dependencies = [
     "selenium>=4.0.0",
 ]
 
+[project.optional-dependencies]
+# Visual-regression (visual_regression.py) lazily imports these.
+visual = [
+    "Pillow>=10.0.0",
+    "numpy>=1.24.0",
+    "scikit-image>=0.22.0",
+]
+
 [project.scripts]
 qa-execution = "qa_execution.server:main"
 

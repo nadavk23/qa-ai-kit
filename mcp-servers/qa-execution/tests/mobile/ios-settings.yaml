@@ -1,0 +1,23 @@
+name: iOS Settings smoke
+description: >
+  Launches the built-in Settings app on an iOS Simulator, opens General, and
+  verifies the About row is shown. Needs no app of your own — a good first
+  end-to-end check that the iOS stack (Appium + xcuitest + simulator) works.
+platform: ios
+target:
+  device_name: QA-iPhone16     # any simulator name available to `xcrun simctl list`
+  version: "26.5"              # match an installed runtime; omit to use the default
+  bundle_id: com.apple.Preferences
+on_failure: stop
+steps:
+  - action: assert_text
+    text: General
+    timeout_ms: 8000
+  - action: tap
+    strategy: accessibility_id
+    value: com.apple.settings.general
+  - action: assert_text
+    text: About
+    timeout_ms: 8000
+  - action: screenshot
+    path: artifacts/ios-settings-general.png
