@@ -24,6 +24,13 @@ from qa_execution.android import (
     android_wait_sync,
 )
 from qa_execution.browser import BrowserSession
+from qa_execution import recon
+from qa_execution.apk_static import apk_inspect_sync
+from qa_execution.mobile_recon import (
+    android_a11y_audit_sync,
+    android_perf_snapshot_sync,
+    ios_a11y_audit_sync,
+)
 from qa_execution.mobile import (
     DeviceRegistry,
     ios_assert_element_sync,
@@ -343,6 +350,122 @@ async def test_run(path: str) -> str:
     return await run_yaml_test(path, session)
 
 
+# ---------- Auto-discovery recon (Layer 2) ----------
+
+@mcp.tool()
+async def web_discover(limit: int = 30) -> str:
+    """Map the current page's functionality surface: links, forms, nav, media.
+
+    Recon primitive. Run after web_navigate to see which main flows exist
+    (forms are the highest-signal candidates). Returns internal/external links,
+    every form with its fields, primary nav labels, and interactive counts.
+    """
+    await session.ensure_started()
+    return await recon.discover(session.page, limit)
+
+
+@mcp.tool()
+async def web_a11y_audit(limit: int = 8) -> str:
+    """First-pass structural accessibility scan of the current page.
+
+    Flags the cheap, high-signal WCAG failures: missing image alt, unlabeled
+    form fields, buttons/links with no accessible name, missing lang, heading
+    order, landmarks, and positive tabindex. Does NOT check color contrast or
+    screen-reader flow — returns up to `limit` examples per rule.
+    """
+    await session.ensure_started()
+    return await recon.a11y_audit(session.page, limit)
+
+
+@mcp.tool()
+async def web_perf_snapshot() -> str:
+    """Single-load performance snapshot of the current page.
+
+    Reads the browser's own Navigation/Paint/Resource timing: TTFB, First
+    Contentful Paint, DOMContentLoaded, load, total transfer weight, request
+    count, and DOM size — each with a rough Web-Vitals-style band. First-pass,
+    unthrottled; not a lab benchmark.
+    """
+    await session.ensure_started()
+    return await recon.perf_snapshot(session.page)
+
+
+@mcp.tool()
+async def security_headers_check(url: str) -> str:
+    """First-pass transport/header security hygiene for a URL.
+
+    Standalone httpx request (no browser needed). Checks HTTPS upgrade, the
+    standard security headers (HSTS, CSP, X-Frame-Options, X-Content-Type-
+    Options, Referrer-Policy, Permissions-Policy), cookie flags, and version-
+    disclosure headers. NOT a penetration test — surface hygiene only.
+    """
+    return await recon.security_headers(url)
+
+
+@mcp.tool()
+async def web_recon(url: str, link_limit: int = 30, session_name: str = "") -> str:
+    """One-shot auto-discovery recon of a web URL across all static dimensions.
+
+    Navigates to `url`, then runs discovery + accessibility + performance +
+    security in sequence and returns a single consolidated first-pass report.
+    This is the 'point it at a URL and go' entry point.
+
+    session_name: if set, loads that saved browser session (from a prior
+        web_session_save) BEFORE navigating — so recon runs against the
+        authenticated, logged-in app rather than the public front door. This is
+        where real products actually live; recon on an unauthenticated SPA
+        landing page usually finds little. Leave empty for public/unauth recon.
+
+    The page is given time to settle after load, so client-rendered (React/Vue/
+    Angular) apps are scanned hydrated, not as an empty shell.
+
+    For a deeper pass — walking real flows (login, checkout, search) and
+    capturing screenshots — drive the individual tools, or use the
+    `auto-discover-recon` skill which orchestrates the login → save → re-scan
+    workflow on top of these.
+    """
+    auth_note = "unauthenticated (public) context"
+    if session_name:
+        sessions_dir = Path.home() / ".qa-execution" / "sessions"
+        storage_path = sessions_dir / f"{session_name}.json"
+        if not storage_path.exists():
+            return (
+                f"FAIL: session {session_name!r} not found at {storage_path}. "
+                f"Run a login flow then web_session_save({session_name!r}) first, "
+                f"or omit session_name for unauthenticated recon."
+            )
+        await session.restart_with_storage(str(storage_path))
+        auth_note = f"authenticated context (session {session_name!r})"
+
+    await session.ensure_started()
+    final_url = await recon.navigate_and_settle(session.page, url)
+    sections = [
+        f"########## AUTO-DISCOVERY RECON: {url} ##########",
+        f"Context: {auth_note}\nLanded on: {final_url}\n",
+        await recon.discover(session.page, link_limit),
+        await recon.a11y_audit(session.page),
+        await recon.perf_snapshot(session.page),
+        await recon.security_headers(final_url),
+        "########## END RECON — first-pass only; see per-dimension 'go deeper' notes ##########",
+    ]
+    return "\n\n".join(sections)
+
+
+@mcp.tool()
+async def apk_inspect(apk_path: str) -> str:
+    """Static first-pass recon of an APK file — the 'point recon at an APK' entry.
+
+    Reads the APK with `aapt dump badging` WITHOUT installing or running it:
+    package identity, version, min/target SDK, launchable entry, all permissions,
+    and high-signal security flags (debuggable, dangerous-permission surface).
+
+    Requires the Android SDK build-tools (for aapt/aapt2) — same prerequisite
+    family as the android_* tools. For functionality/UI/a11y/perf on the running
+    app, install it and use device_allocate + the android_* recon tools.
+    """
+    return await asyncio.to_thread(apk_inspect_sync, apk_path)
+
+
 # ---------- Mobile (iOS via Appium) ----------
 
 @mcp.tool()
@@ -615,6 +738,24 @@ async def ios_logs(token: str, log_type: str = "syslog", lines: int = 200) -> st
     return await asyncio.to_thread(ios_logs_sync, device, log_type, lines)
 
 
+@mcp.tool()
+async def ios_a11y_audit(token: str, limit: int = 12) -> str:
+    """First-pass structural accessibility scan of the current iOS screen (recon).
+
+    From the XCUITest hierarchy: interactive elements with no accessibility
+    name/label/value, and named elements marked accessible=false. Structural
+    only — no contrast, VoiceOver rotor order, or Dynamic Type. Run per screen.
+    """
+    try:
+        device = devices.get(token)
+    except KeyError as e:
+        return f"FAIL: {e}"
+    try:
+        return await asyncio.to_thread(ios_a11y_audit_sync, device, limit)
+    except Exception as e:
+        return f"FAIL: {type(e).__name__}: {e}"
+
+
 # ---------- Mobile (Android via adb) ----------
 
 @mcp.tool()
@@ -836,6 +977,45 @@ async def android_logcat(
         return await asyncio.to_thread(
             android_logcat_sync, device, filter_expr, lines, clear
         )
+    except Exception as e:
+        return f"FAIL: {type(e).__name__}: {e}"
+
+
+@mcp.tool()
+async def android_a11y_audit(token: str, limit: int = 12) -> str:
+    """First-pass structural accessibility scan of the current Android screen (recon).
+
+    From the uiautomator hierarchy: clickable elements with no text/content-desc
+    (invisible to TalkBack), images with no content-desc, and touch targets below
+    48dp. Structural only — no contrast, TalkBack focus order, or dynamic type.
+    Run per screen.
+    """
+    try:
+        device = devices.get(token)
+    except KeyError as e:
+        return f"FAIL: {e}"
+    try:
+        return await asyncio.to_thread(android_a11y_audit_sync, device, limit)
+    except Exception as e:
+        return f"FAIL: {type(e).__name__}: {e}"
+
+
+@mcp.tool()
+async def android_perf_snapshot(token: str, package: str = "") -> str:
+    """First-pass Android performance snapshot for the app (recon).
+
+    Cold-start time (`am start -W`), memory (TOTAL PSS via `dumpsys meminfo`),
+    and frame jank (`dumpsys gfxinfo`), each with a rough band. Single sample on
+    an emulator/device — not a controlled benchmark. Uses the session's package
+    unless `package` is given. Interact with the app before running so gfxinfo
+    has frames to report.
+    """
+    try:
+        device = devices.get(token)
+    except KeyError as e:
+        return f"FAIL: {e}"
+    try:
+        return await asyncio.to_thread(android_perf_snapshot_sync, device, package)
     except Exception as e:
         return f"FAIL: {type(e).__name__}: {e}"
 
