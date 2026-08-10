@@ -20,16 +20,16 @@ Auto-trigger inside Claude Code when their description matches your message. Ins
 
 | Server | Version | Tools | Surfaces covered |
 |---|---|---|---|
-| **`qa-execution`** | 0.4.0 | 43 | Web (Playwright) · API (httpx) · iOS Simulator (Appium) · Android emulator (direct `adb`, no Appium) · Auto-discovery recon |
+| **`qa-execution`** | 0.5.0 | 47 | Web (Playwright) · API (httpx) · iOS Simulator (Appium) · Android emulator (direct `adb`, no Appium) · Auto-discovery recon (web & mobile/APK) |
 
 **`qa-execution` tool breakdown:**
 - **Web + API (15)** — `ping`, `web_*` (12), `api_request`, `test_run`
-- **Auto-discovery recon (5)** — `web_recon` *(one-shot)*, `web_discover`, `web_a11y_audit`, `web_perf_snapshot`, `security_headers_check` — first-pass across functionality / UI / accessibility / performance / security
+- **Auto-discovery recon (6)** — `web_recon` *(one-shot, session-aware)*, `web_discover`, `web_a11y_audit`, `web_perf_snapshot`, `security_headers_check`, `apk_inspect` *(static APK — no device)* — first-pass across functionality / UI / accessibility / performance / security
 - **Device session (3)** — `device_allocate`, `device_release`, `device_list` (cross-platform: iOS + Android)
-- **iOS (9)** — `ios_tap`, `ios_type`, `ios_assert_element`, `ios_assert_text`, `ios_inspect`, `ios_screenshot`, `ios_wait`, `ios_scroll`, `ios_logs` *(real-time debug — log tail)*
-- **Android (11)** — `android_tap`, `android_type`, `android_assert_element`, `android_assert_text`, `android_inspect`, `android_screenshot`, `android_wait`, `android_scroll`, `android_back`, `android_home`, `android_logcat` *(real-time debug — log tail)*
+- **iOS (10)** — `ios_tap`, `ios_type`, `ios_assert_element`, `ios_assert_text`, `ios_inspect`, `ios_screenshot`, `ios_wait`, `ios_scroll`, `ios_logs` *(log tail)*, `ios_a11y_audit` *(recon)*
+- **Android (13)** — `android_tap`, `android_type`, `android_assert_element`, `android_assert_text`, `android_inspect`, `android_screenshot`, `android_wait`, `android_scroll`, `android_back`, `android_home`, `android_logcat` *(log tail)*, `android_a11y_audit` *(recon)*, `android_perf_snapshot` *(recon)*
 
-Roadmap: mobile recon tools, CLI + Chrome extension testing (v0.5), real-device farm integration. See [`mcp-servers/qa-execution/README.md`](mcp-servers/qa-execution/README.md) for the full tool reference.
+Roadmap: iOS runtime perf, deep APK/IPA security, CLI + Chrome extension testing (v0.6), real-device farm integration. See [`mcp-servers/qa-execution/README.md`](mcp-servers/qa-execution/README.md) for the full tool reference.
 
 ## Layout
 
@@ -141,7 +141,7 @@ Open Claude Code with this folder as the working directory, then ask in natural 
 | Review a test plan | *"review this test plan"* + paste / link the plan |
 | Write a bug report | *"write a bug for X"* + describe what broke (or paste a stack trace / screenshot) |
 | Generate Pilot code from a plan | *"convert this plan to Pilot tests"* + paste / link a plan with cases |
-| Recon a live target (Layer 2) | *"recon https://myapp.com"* / *"what should I test here?"* + a live URL |
+| Recon a live target (Layer 2) | *"recon https://myapp.com"* / *"scan this APK"* / *"what should I test here?"* + a URL or `.apk` |
 | Run a web test | *"use qa-execution to navigate to X, type Y, assert Z"* |
 | Run an iOS test | *"device_allocate platform=ios bundle_id=com.apple.mobilesafari, then ios_inspect"* |
 | Run an Android test | *"device_allocate platform=android emulator_name=Pixel_10_Pro_XL package=com.android.settings, then android_inspect"* |

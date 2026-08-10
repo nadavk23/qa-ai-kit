@@ -25,6 +25,12 @@ from qa_execution.android import (
 )
 from qa_execution.browser import BrowserSession
 from qa_execution import recon
+from qa_execution.apk_static import apk_inspect_sync
+from qa_execution.mobile_recon import (
+    android_a11y_audit_sync,
+    android_perf_snapshot_sync,
+    ios_a11y_audit_sync,
+)
 from qa_execution.mobile import (
     DeviceRegistry,
     ios_assert_element_sync,
@@ -445,6 +451,21 @@ async def web_recon(url: str, link_limit: int = 30, session_name: str = "") -> s
     return "\n\n".join(sections)
 
 
+@mcp.tool()
+async def apk_inspect(apk_path: str) -> str:
+    """Static first-pass recon of an APK file — the 'point recon at an APK' entry.
+
+    Reads the APK with `aapt dump badging` WITHOUT installing or running it:
+    package identity, version, min/target SDK, launchable entry, all permissions,
+    and high-signal security flags (debuggable, dangerous-permission surface).
+
+    Requires the Android SDK build-tools (for aapt/aapt2) — same prerequisite
+    family as the android_* tools. For functionality/UI/a11y/perf on the running
+    app, install it and use device_allocate + the android_* recon tools.
+    """
+    return await asyncio.to_thread(apk_inspect_sync, apk_path)
+
+
 # ---------- Mobile (iOS via Appium) ----------
 
 @mcp.tool()
@@ -717,6 +738,24 @@ async def ios_logs(token: str, log_type: str = "syslog", lines: int = 200) -> st
     return await asyncio.to_thread(ios_logs_sync, device, log_type, lines)
 
 
+@mcp.tool()
+async def ios_a11y_audit(token: str, limit: int = 12) -> str:
+    """First-pass structural accessibility scan of the current iOS screen (recon).
+
+    From the XCUITest hierarchy: interactive elements with no accessibility
+    name/label/value, and named elements marked accessible=false. Structural
+    only — no contrast, VoiceOver rotor order, or Dynamic Type. Run per screen.
+    """
+    try:
+        device = devices.get(token)
+    except KeyError as e:
+        return f"FAIL: {e}"
+    try:
+        return await asyncio.to_thread(ios_a11y_audit_sync, device, limit)
+    except Exception as e:
+        return f"FAIL: {type(e).__name__}: {e}"
+
+
 # ---------- Mobile (Android via adb) ----------
 
 @mcp.tool()
@@ -938,6 +977,45 @@ async def android_logcat(
         return await asyncio.to_thread(
             android_logcat_sync, device, filter_expr, lines, clear
         )
+    except Exception as e:
+        return f"FAIL: {type(e).__name__}: {e}"
+
+
+@mcp.tool()
+async def android_a11y_audit(token: str, limit: int = 12) -> str:
+    """First-pass structural accessibility scan of the current Android screen (recon).
+
+    From the uiautomator hierarchy: clickable elements with no text/content-desc
+    (invisible to TalkBack), images with no content-desc, and touch targets below
+    48dp. Structural only — no contrast, TalkBack focus order, or dynamic type.
+    Run per screen.
+    """
+    try:
+        device = devices.get(token)
+    except KeyError as e:
+        return f"FAIL: {e}"
+    try:
+        return await asyncio.to_thread(android_a11y_audit_sync, device, limit)
+    except Exception as e:
+        return f"FAIL: {type(e).__name__}: {e}"
+
+
+@mcp.tool()
+async def android_perf_snapshot(token: str, package: str = "") -> str:
+    """First-pass Android performance snapshot for the app (recon).
+
+    Cold-start time (`am start -W`), memory (TOTAL PSS via `dumpsys meminfo`),
+    and frame jank (`dumpsys gfxinfo`), each with a rough band. Single sample on
+    an emulator/device — not a controlled benchmark. Uses the session's package
+    unless `package` is given. Interact with the app before running so gfxinfo
+    has frames to report.
+    """
+    try:
+        device = devices.get(token)
+    except KeyError as e:
+        return f"FAIL: {e}"
+    try:
+        return await asyncio.to_thread(android_perf_snapshot_sync, device, package)
     except Exception as e:
         return f"FAIL: {type(e).__name__}: {e}"
 
