@@ -397,26 +397,49 @@ async def security_headers_check(url: str) -> str:
 
 
 @mcp.tool()
-async def web_recon(url: str, link_limit: int = 30) -> str:
+async def web_recon(url: str, link_limit: int = 30, session_name: str = "") -> str:
     """One-shot auto-discovery recon of a web URL across all static dimensions.
 
     Navigates to `url`, then runs discovery + accessibility + performance +
     security in sequence and returns a single consolidated first-pass report.
     This is the 'point it at a URL and go' entry point.
 
+    session_name: if set, loads that saved browser session (from a prior
+        web_session_save) BEFORE navigating — so recon runs against the
+        authenticated, logged-in app rather than the public front door. This is
+        where real products actually live; recon on an unauthenticated SPA
+        landing page usually finds little. Leave empty for public/unauth recon.
+
+    The page is given time to settle after load, so client-rendered (React/Vue/
+    Angular) apps are scanned hydrated, not as an empty shell.
+
     For a deeper pass — walking real flows (login, checkout, search) and
     capturing screenshots — drive the individual tools, or use the
-    `auto-discover-recon` skill which orchestrates flow-walking on top of these.
+    `auto-discover-recon` skill which orchestrates the login → save → re-scan
+    workflow on top of these.
     """
+    auth_note = "unauthenticated (public) context"
+    if session_name:
+        sessions_dir = Path.home() / ".qa-execution" / "sessions"
+        storage_path = sessions_dir / f"{session_name}.json"
+        if not storage_path.exists():
+            return (
+                f"FAIL: session {session_name!r} not found at {storage_path}. "
+                f"Run a login flow then web_session_save({session_name!r}) first, "
+                f"or omit session_name for unauthenticated recon."
+            )
+        await session.restart_with_storage(str(storage_path))
+        auth_note = f"authenticated context (session {session_name!r})"
+
     await session.ensure_started()
-    await session.page.goto(url)
+    final_url = await recon.navigate_and_settle(session.page, url)
     sections = [
         f"########## AUTO-DISCOVERY RECON: {url} ##########",
-        f"(Landed on: {session.page.url})\n",
+        f"Context: {auth_note}\nLanded on: {final_url}\n",
         await recon.discover(session.page, link_limit),
         await recon.a11y_audit(session.page),
         await recon.perf_snapshot(session.page),
-        await recon.security_headers(url),
+        await recon.security_headers(final_url),
         "########## END RECON — first-pass only; see per-dimension 'go deeper' notes ##########",
     ]
     return "\n\n".join(sections)

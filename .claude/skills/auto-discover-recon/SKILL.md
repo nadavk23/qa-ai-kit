@@ -46,16 +46,41 @@ If authorization is at all unclear, ask one direct question before running.
 
 Run the one-shot first, then decide where to zoom in:
 
-1. `web_recon(url)` — navigates and returns discovery + accessibility +
-   performance + security in one consolidated report.
+1. `web_recon(url)` — navigates (with a settle for client-rendered apps) and
+   returns discovery + accessibility + performance + security in one
+   consolidated report.
 
 That single call covers the static dimensions. Read its output before going
 further — the discovery section tells you which flows exist and are worth
 walking in Step 3.
 
+**Watch for a login wall.** Most real products show almost nothing until you're
+authenticated — a sparse `web_discover` result dominated by a login/signup form
+is the tell. When you see that, the unauthenticated recon is only the *front
+door*; the real surface is behind auth. Go to Step 2a before drawing conclusions.
+
 If you need to re-run a single dimension (e.g. after navigating deeper into the
 app), the individual tools are: `web_discover`, `web_a11y_audit`,
 `web_perf_snapshot`, `security_headers_check(url)`.
+
+## Step 2a — Authenticated recon (the login → save → re-scan loop)
+
+This is where the real value is for any product with accounts. Do NOT skip it
+just because the front-door recon returned *something*.
+
+1. Ask the user for test credentials (or a way to reach a logged-in state). If
+   they can't/won't provide them, say so and report only the unauth surface.
+2. Walk the login flow once: `web_navigate` → `web_inspect` → `web_type` the
+   credentials → `web_click` submit → `web_assert_*` a logged-in marker.
+3. `web_session_save("recon-auth")` to persist the authenticated cookies.
+4. Re-run recon against a deep, logged-in URL **through that session**:
+   `web_recon(<in-app URL>, session_name="recon-auth")`. Now discovery, a11y,
+   perf, and security map the actual app, not the marketing shell.
+5. Compare the two passes in the report — front-door vs. authenticated. The
+   delta is usually the whole story.
+
+Never use real end-user credentials or real payment data. Use dedicated test
+accounts the user provides.
 
 ## Step 3 — Walk the main flows (web)
 

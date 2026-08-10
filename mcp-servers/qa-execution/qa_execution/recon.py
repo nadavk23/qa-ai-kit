@@ -20,6 +20,30 @@ from urllib.parse import urlparse
 import httpx
 
 # --------------------------------------------------------------------------- #
+# Navigation that survives single-page apps
+# --------------------------------------------------------------------------- #
+
+
+async def navigate_and_settle(page: Any, url: str, settle_ms: int = 2500) -> str:
+    """Navigate to `url` and give a client-rendered (SPA) page time to paint.
+
+    `goto` returns on the 'load' event, but React/Vue/Angular apps render most
+    of their real surface *after* that. We then wait — best-effort — for the
+    network to go idle so discovery/a11y see the hydrated DOM, not an empty
+    shell. Pages that poll forever never go idle; that's expected, so the wait
+    timing out is not an error. Returns the final URL (post-redirect).
+    """
+    await page.goto(url)
+    try:
+        await page.wait_for_load_state("networkidle", timeout=settle_ms)
+    except Exception:
+        # Never-idle page (polling/websockets) or slow tail — proceed with
+        # whatever has rendered so far rather than failing the whole recon.
+        pass
+    return page.url
+
+
+# --------------------------------------------------------------------------- #
 # Functionality + UI discovery
 # --------------------------------------------------------------------------- #
 
