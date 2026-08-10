@@ -2,7 +2,7 @@
 
 MCP server providing web + API + iOS + Android execution primitives for QA work, built on Playwright + httpx + Appium (iOS) + direct `adb` (Android).
 
-## Tools (38)
+## Tools (43)
 
 ### Web + API (15)
 
@@ -23,6 +23,20 @@ MCP server providing web + API + iOS + Android execution primitives for QA work,
 | `web_batch(actions, on_failure="stop")` | Run multiple actions in one call |
 | `api_request(method, url, ...)` | HTTP request for API testing |
 | `test_run(path)` | Run a YAML test file (web + API only — iOS YAML support is roadmap) |
+
+### Auto-discovery recon (5)
+
+First-pass, breadth-over-depth mapping of a live target. Deliberately shallow — enough signal to prove value and point where to go deeper, **not** a full audit. See the `auto-discover-recon` skill, which orchestrates these plus flow-walking.
+
+| Tool | Purpose |
+|---|---|
+| `web_recon(url, link_limit=30)` | One-shot: navigate + discovery + accessibility + performance + security in one consolidated report. The "point it at a URL and go" entry point. |
+| `web_discover(limit=30)` | Map the current page's functionality surface: internal/external links, forms + their fields, primary nav, interactive/media counts |
+| `web_a11y_audit(limit=8)` | First-pass structural accessibility scan: missing alt, unlabeled fields, nameless controls, `lang`, heading order, landmarks, positive tabindex. **No color-contrast / screen-reader check.** |
+| `web_perf_snapshot()` | Single-load timing from the browser: TTFB, FCP, DOMContentLoaded, load, transfer weight, request count, DOM size, each with a rough Web-Vitals band. Unthrottled — not a lab benchmark. |
+| `security_headers_check(url)` | Standalone httpx check of HTTPS upgrade, security headers (HSTS, CSP, X-Frame-Options, X-Content-Type-Options, Referrer-Policy, Permissions-Policy), cookie flags, version disclosure. **Surface hygiene only — not a pentest.** |
+
+Recon is web-only for now. Mobile recon is done by orchestrating the `*_inspect` / `*_screenshot` / `*_logcat` tools via the `auto-discover-recon` skill; structured mobile a11y/perf/security tools are a gap (roadmap).
 
 ### Cross-platform device session (3)
 
@@ -72,6 +86,7 @@ Android locator strategies: `text`, `accessibility_id` (content-desc), `resource
 
 | What you want to do | What the agent will use |
 |---|---|
+| First-pass recon of a URL | `web_recon(url)` — or the `auto-discover-recon` skill for flow-walking too |
 | See what's on screen | `web_navigate` → `web_screenshot` → describe |
 | Test a flow end-to-end | `web_batch` or `test_run` |
 | Check for visual bugs | `web_navigate` → `web_screenshot` → describe deviations |
@@ -214,6 +229,10 @@ Use qa-execution.api_request to GET https://httpbin.org/status/200 and verify st
 ```
 
 ```
+Use qa-execution.web_recon on https://example.com and summarize the first-pass findings.
+```
+
+```
 Use qa-execution.test_run to execute mcp-servers/qa-execution/tests/web/example-login.yaml.
 ```
 
@@ -238,8 +257,9 @@ then android_logcat lines=50, then device_release.
 
 - **v0.1**: web + API, headless Chromium, single page session, YAML test runner
 - **v0.2**: iOS Simulator via Appium (`device_*` + `ios_*` tools)
-- **v0.3** (current): Android emulator via direct `adb` (`android_*` tools, no Appium), `ios_logs` for iOS debug parity
-- **v0.4**: CLI testing (`cli_*` tools), Chrome extension testing, real-device farm integration, mobile YAML test runner support
+- **v0.3**: Android emulator via direct `adb` (`android_*` tools, no Appium), `ios_logs` for iOS debug parity
+- **v0.4** (current): auto-discovery recon (`web_recon`, `web_discover`, `web_a11y_audit`, `web_perf_snapshot`, `security_headers_check`) — first-pass mapping across functionality / UI / accessibility / performance / security
+- **v0.5**: mobile recon tools (structured a11y/perf on-device), CLI testing (`cli_*` tools), Chrome extension testing, real-device farm integration, mobile YAML test runner support
 - Later: multiple tabs, headful toggle, request mocking/interception, video recording, parameterized tests
 
 ## Limitations (v0.3)

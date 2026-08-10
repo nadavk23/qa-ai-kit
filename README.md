@@ -13,20 +13,23 @@ Auto-trigger inside Claude Code when their description matches your message. Ins
 | **`review-test-plan`** | "review this test plan" / paste or link a plan | Structured feedback against personal QA standards + ISTQB CTFL + CT-MAT. Returns Must-fix / Should-fix / Nice-to-have / What's strong / Suggested next revision. |
 | **`write-bug-report`** | "write a bug for X" / "draft a Jira for this" / describe a bug | Asks incrementally for the critical missing info (steps, app version, device + OS) instead of dumping a long checklist. Outputs a P0–P3 ticket with reproducibility, lifecycle/network state, and automation-eligibility tag. |
 | **`plan-to-pilot`** | "convert this plan to Pilot tests" / "generate Pilot code" | Emits runnable [Wix Pilot](https://github.com/wix-incubator/pilot) TypeScript specs using `pilot.autopilot()`. Defaults: `@wix-pilot/playwright` for web, `@wix-pilot/webdriverio-appium` for mobile (Detox as alternative for React Native). One spec file per feature under `./pilot-tests/<feature-slug>/`. |
+| **`auto-discover-recon`** | "recon this URL" / "scan this app" / "what should I test here" / paste a live URL | **Layer 2.** Points the kit at a live web URL (or running app) and returns a first-pass map across functionality / UI / accessibility / performance / security — walks the main flows, captures evidence, and returns a prioritized "go deeper" list. Breadth-first triage, not a full audit. |
+| **`diagnose-and-recommend`** | *(placeholder — Layer 1, not built)* | **Roadmap.** Will diagnose a product from a plain-language description and recommend which tools/MCPs to install (basic package + deeper modules on demand), logging capability gaps as feature-requests. Today it only explains the plan and routes you to what exists. |
 
 ### MCP servers
 
 | Server | Version | Tools | Surfaces covered |
 |---|---|---|---|
-| **`qa-execution`** | 0.3.0 | 38 | Web (Playwright) · API (httpx) · iOS Simulator (Appium) · Android emulator (direct `adb`, no Appium) |
+| **`qa-execution`** | 0.4.0 | 43 | Web (Playwright) · API (httpx) · iOS Simulator (Appium) · Android emulator (direct `adb`, no Appium) · Auto-discovery recon |
 
 **`qa-execution` tool breakdown:**
 - **Web + API (15)** — `ping`, `web_*` (12), `api_request`, `test_run`
+- **Auto-discovery recon (5)** — `web_recon` *(one-shot)*, `web_discover`, `web_a11y_audit`, `web_perf_snapshot`, `security_headers_check` — first-pass across functionality / UI / accessibility / performance / security
 - **Device session (3)** — `device_allocate`, `device_release`, `device_list` (cross-platform: iOS + Android)
 - **iOS (9)** — `ios_tap`, `ios_type`, `ios_assert_element`, `ios_assert_text`, `ios_inspect`, `ios_screenshot`, `ios_wait`, `ios_scroll`, `ios_logs` *(real-time debug — log tail)*
 - **Android (11)** — `android_tap`, `android_type`, `android_assert_element`, `android_assert_text`, `android_inspect`, `android_screenshot`, `android_wait`, `android_scroll`, `android_back`, `android_home`, `android_logcat` *(real-time debug — log tail)*
 
-Roadmap: CLI + Chrome extension testing (v0.4), real-device farm integration. See [`mcp-servers/qa-execution/README.md`](mcp-servers/qa-execution/README.md) for the full tool reference.
+Roadmap: mobile recon tools, CLI + Chrome extension testing (v0.5), real-device farm integration. See [`mcp-servers/qa-execution/README.md`](mcp-servers/qa-execution/README.md) for the full tool reference.
 
 ## Layout
 
@@ -138,6 +141,7 @@ Open Claude Code with this folder as the working directory, then ask in natural 
 | Review a test plan | *"review this test plan"* + paste / link the plan |
 | Write a bug report | *"write a bug for X"* + describe what broke (or paste a stack trace / screenshot) |
 | Generate Pilot code from a plan | *"convert this plan to Pilot tests"* + paste / link a plan with cases |
+| Recon a live target (Layer 2) | *"recon https://myapp.com"* / *"what should I test here?"* + a live URL |
 | Run a web test | *"use qa-execution to navigate to X, type Y, assert Z"* |
 | Run an iOS test | *"device_allocate platform=ios bundle_id=com.apple.mobilesafari, then ios_inspect"* |
 | Run an Android test | *"device_allocate platform=android emulator_name=Pixel_10_Pro_XL package=com.android.settings, then android_inspect"* |
