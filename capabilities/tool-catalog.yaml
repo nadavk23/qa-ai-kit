@@ -1,0 +1,230 @@
+# QA AI KIT — Tool Catalog
+#
+# The knowledge base behind the `diagnose-and-recommend` skill (Layer 1).
+# Each entry describes a testing tool/MCP, WHEN it's genuinely the right call,
+# and how to get it. This file is open and auditable on purpose: recommendation
+# logic keys off `covers` + `when_right` matched against a product's diagnosed
+# risks — NEVER off `affiliate`.
+#
+# HONESTY CONTRACT (enforced by structure, not by promise):
+#   - `affiliate` is a separate, visible field. It is disclosed in every
+#     recommendation and is NEVER an input to ranking or selection.
+#   - `tier: basic`  → recommended by default (free/open, low setup).
+#   - `tier: deep`   → recommended on demand, when a diagnosed risk warrants it.
+#   - If the right tool for a risk is NOT in this catalog, that's a gap: log it
+#     to feature-requests/ instead of forcing a poor fit.
+#
+# Field reference:
+#   id          stable slug
+#   name        display name
+#   category    web | mobile | api | performance | security | accessibility | visual | network | cross-platform
+#   covers      dimensions it addresses: functionality | ui | accessibility | performance | security | load | compatibility
+#   when_right  the honest "reach for this when…" — the selection signal
+#   not_for     where it's the wrong tool (keeps recommendations honest)
+#   tier        basic | deep
+#   install     one-line how-to
+#   affiliate   null, or { program, disclosure } — populated ONLY where a real
+#               referral relationship exists; disclosed on every use
+#   in_kit      true if already shipped inside QA AI KIT
+
+tools:
+  # ---------------- Basic package (default, in-kit / free) ----------------
+  - id: qa-execution-web
+    name: qa-execution — web recon & runner
+    category: web
+    covers: [functionality, ui, accessibility, performance, security]
+    when_right: >
+      Any web product. First-pass recon (web_recon), then flow execution with
+      the web_* tools. The default starting point for web testing in the kit.
+    not_for: Native mobile apps; heavy load/stress (use k6).
+    tier: basic
+    install: Built into QA AI KIT (mcp-servers/qa-execution).
+    affiliate: null
+    in_kit: true
+
+  - id: qa-execution-mobile
+    name: qa-execution — mobile recon & drivers
+    category: mobile
+    covers: [functionality, ui, accessibility, performance, security]
+    when_right: >
+      iOS (Simulator, via Appium) or Android (emulator/device, via adb) apps.
+      Static APK/IPA recon needs no device; runtime a11y/perf on-device.
+    not_for: Real-device matrix at scale (see device clouds); RN-specific gray-box (Detox).
+    tier: basic
+    install: Built into QA AI KIT. Android needs SDK platform-tools; iOS needs Appium + xcuitest.
+    affiliate: null
+    in_kit: true
+
+  - id: axe-core
+    name: axe-core
+    category: accessibility
+    covers: [accessibility]
+    when_right: >
+      When the kit's structural a11y first-pass flags issues and you need a real
+      WCAG audit incl. color contrast and ARIA correctness on web.
+    not_for: Native mobile (use platform a11y scanners).
+    tier: basic
+    install: "npm i -D @axe-core/playwright  (or the axe DevTools browser extension)"
+    affiliate: null
+    in_kit: false
+
+  - id: lighthouse
+    name: Lighthouse
+    category: performance
+    covers: [performance, accessibility]
+    when_right: >
+      Deeper web performance than the recon snapshot — throttled Core Web Vitals,
+      opportunities, and a repeatable score. Good CI gate for web perf budgets.
+    not_for: Backend/server-side load; native mobile.
+    tier: basic
+    install: "npm i -g lighthouse  (or built into Chrome DevTools)"
+    affiliate: null
+    in_kit: false
+
+  # ---------------- Deep modules (on-demand) ----------------
+  - id: appium
+    name: Appium
+    category: mobile
+    covers: [functionality, ui]
+    when_right: >
+      Cross-platform native/hybrid mobile automation, or iOS automation (the
+      kit's iOS path already uses it). Mature ecosystem, many language bindings.
+    not_for: Pure web (use Playwright); fastest-possible RN e2e (Detox/Maestro).
+    tier: deep
+    install: "npm i -g appium && appium driver install xcuitest uiautomator2"
+    affiliate: null
+    in_kit: false
+
+  - id: k6
+    name: Grafana k6
+    category: performance
+    covers: [performance, load]
+    when_right: >
+      Load, stress, soak, and spike testing of APIs/backends. Scriptable in JS,
+      great CI integration. The right call whenever a product has a scale risk.
+    not_for: Client-side rendering perf (use Lighthouse); UI functional testing.
+    tier: deep
+    install: "brew install k6  (or Docker: grafana/k6)"
+    affiliate: null
+    in_kit: false
+
+  - id: owasp-zap
+    name: OWASP ZAP
+    category: security
+    covers: [security]
+    when_right: >
+      A real first web app-sec pass beyond header hygiene — passive scan, active
+      scan, spidering. When the recon security check flags gaps worth pursuing.
+    not_for: Mobile binaries (use MobSF); a substitute for a professional pentest.
+    tier: deep
+    install: "brew install --cask zap  (or docker run zaproxy/zap-stable)"
+    affiliate: null
+    in_kit: false
+
+  - id: mobsf
+    name: MobSF (Mobile Security Framework)
+    category: security
+    covers: [security]
+    when_right: >
+      Deeper mobile app-sec than the kit's static manifest/Info.plist pass:
+      binary analysis, secrets, dataflow, dependency issues for APK/IPA.
+    not_for: Web; runtime behavioral testing.
+    tier: deep
+    install: "docker run -it -p 8000:8000 opensecurity/mobile-security-framework-mobsf"
+    affiliate: null
+    in_kit: false
+
+  - id: detox
+    name: Detox
+    category: mobile
+    covers: [functionality, ui]
+    when_right: >
+      React Native apps wanting fast, gray-box, synchronization-aware e2e that
+      knows when the app is idle. Pairs with the kit's plan-to-pilot output.
+    not_for: Native iOS/Android without RN; web.
+    tier: deep
+    install: "npm i -D detox && detox init"
+    affiliate: null
+    in_kit: false
+
+  - id: maestro
+    name: Maestro
+    category: mobile
+    covers: [functionality, ui]
+    when_right: >
+      Simple, declarative mobile UI flows (YAML) across iOS/Android/RN when you
+      want low-maintenance smoke/sanity flows fast.
+    not_for: Complex gray-box RN needs (Detox); deep perf/security.
+    tier: deep
+    install: "curl -Ls https://get.maestro.mobile.dev | bash"
+    affiliate: null
+    in_kit: false
+
+  - id: mitmproxy
+    name: mitmproxy
+    category: network
+    covers: [functionality, security]
+    when_right: >
+      Inspecting/altering app traffic — offline/low-connectivity testing, API
+      contract verification, tampering checks, cert-pinning validation.
+    not_for: Load testing; UI automation.
+    tier: deep
+    install: "brew install mitmproxy"
+    affiliate: null
+    in_kit: false
+
+  # ---------------- Device clouds (affiliate-eligible, disclosed) ----------------
+  # These are the ONLY entries with affiliate relationships. They are ranked and
+  # selected purely on `when_right` (real-device / wide-matrix need), identical
+  # to every other tool; the affiliate field only changes DISCLOSURE, not choice.
+  - id: browserstack
+    name: BrowserStack
+    category: cross-platform
+    covers: [compatibility, functionality, ui]
+    when_right: >
+      Real-device / wide browser-and-OS matrix coverage without owning the
+      hardware. The right call when a product's risk is fragmentation across
+      many real devices/browsers you can't reproduce locally.
+    not_for: >
+      Everyday local runs (use the kit's local drivers first — don't pay for a
+      cloud you don't need); deep security/load.
+    tier: deep
+    install: Cloud service — sign up, then point Appium/Playwright at their hub.
+    affiliate:
+      program: BrowserStack affiliate/referral
+      disclosure: >
+        QA AI KIT may earn a referral fee if you sign up via our link. This does
+        NOT affect whether it's recommended — it's suggested only when real-device
+        matrix coverage is the diagnosed need, and local tools are preferred first.
+    in_kit: false
+
+  - id: lambdatest
+    name: LambdaTest
+    category: cross-platform
+    covers: [compatibility, functionality, ui]
+    when_right: >
+      Same real-device / cross-browser matrix need as BrowserStack — offer both
+      and let the user choose on price/coverage/region, not on our payout.
+    not_for: Everyday local runs; deep security/load.
+    tier: deep
+    install: Cloud service — sign up, then point Appium/Playwright at their hub.
+    affiliate:
+      program: LambdaTest affiliate/referral
+      disclosure: >
+        QA AI KIT may earn a referral fee if you sign up via our link. Disclosed
+        for honesty; never a ranking factor. Recommended only for real-device
+        matrix needs, alongside alternatives.
+    in_kit: false
+
+  - id: saucelabs
+    name: Sauce Labs
+    category: cross-platform
+    covers: [compatibility, functionality, ui]
+    when_right: >
+      Enterprise real-device cloud with strong CI/analytics. Consider alongside
+      BrowserStack/LambdaTest when the org already standardizes on it.
+    not_for: Everyday local runs; deep security/load.
+    tier: deep
+    install: Cloud service — sign up, then point Appium/Playwright at their hub.
+    affiliate: null   # no referral relationship — listed for fair comparison
+    in_kit: false

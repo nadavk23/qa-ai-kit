@@ -1,12 +1,15 @@
 # QA AI KIT — Claude Code context
 
-This workspace is for reviewing QA test plans against the user's personal QA standards and ISTQB (Foundation + Mobile Application Testing).
+This workspace is a QA toolkit: reviewing test plans against the user's personal QA standards and ISTQB (Foundation + Mobile Application Testing), plus recommending a testing stack (Layer 1) and running first-pass recon on live targets (Layer 2).
 
 ## Default behavior
 
 - Whenever a test plan, test strategy, or QA approach document is pasted, linked, or referenced in this folder, use the **`review-test-plan`** skill without waiting for an explicit "review" request. The intent is implicit when the user is in this workspace.
 - After producing a review, offer to save it to `reviewed-plans/<feature-or-team>-<YYYY-MM-DD>.md`. Suggest a filename based on what the plan is about — don't save without confirming.
 - Do **not** save reviews containing internal confidential plan text without checking with the user first.
+- When the user **describes a product and asks how/what to test it with** (which tools, which stack, "onboard me"), use the **`diagnose-and-recommend`** skill (Layer 1). Honesty-first: recommend the right tool for the diagnosed risk, never the best-paying one; affiliate links are disclosed, never a ranking factor.
+- When the user points at a **live URL or an APK/IPA** and wants a first read on quality/risk, use the **`auto-discover-recon`** skill (Layer 2). It's breadth-first triage, not a full audit — always say so.
+- Keep the **gap-capture log** honest: when a diagnosed need isn't covered by the kit or `capabilities/tool-catalog.yaml`, append it to `feature-requests/log.jsonl` (generic product context only — no confidential names).
 
 ## Personal QA priorities (these inform every review)
 

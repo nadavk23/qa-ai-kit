@@ -13,8 +13,8 @@ Auto-trigger inside Claude Code when their description matches your message. Ins
 | **`review-test-plan`** | "review this test plan" / paste or link a plan | Structured feedback against personal QA standards + ISTQB CTFL + CT-MAT. Returns Must-fix / Should-fix / Nice-to-have / What's strong / Suggested next revision. |
 | **`write-bug-report`** | "write a bug for X" / "draft a Jira for this" / describe a bug | Asks incrementally for the critical missing info (steps, app version, device + OS) instead of dumping a long checklist. Outputs a P0–P3 ticket with reproducibility, lifecycle/network state, and automation-eligibility tag. |
 | **`plan-to-pilot`** | "convert this plan to Pilot tests" / "generate Pilot code" | Emits runnable [Wix Pilot](https://github.com/wix-incubator/pilot) TypeScript specs using `pilot.autopilot()`. Defaults: `@wix-pilot/playwright` for web, `@wix-pilot/webdriverio-appium` for mobile (Detox as alternative for React Native). One spec file per feature under `./pilot-tests/<feature-slug>/`. |
-| **`auto-discover-recon`** | "recon this URL" / "scan this app" / "what should I test here" / paste a live URL | **Layer 2.** Points the kit at a live web URL (or running app) and returns a first-pass map across functionality / UI / accessibility / performance / security — walks the main flows, captures evidence, and returns a prioritized "go deeper" list. Breadth-first triage, not a full audit. |
-| **`diagnose-and-recommend`** | *(placeholder — Layer 1, not built)* | **Roadmap.** Will diagnose a product from a plain-language description and recommend which tools/MCPs to install (basic package + deeper modules on demand), logging capability gaps as feature-requests. Today it only explains the plan and routes you to what exists. |
+| **`auto-discover-recon`** | "recon this URL" / "scan this app" / "what should I test here" / paste a live URL or APK/IPA | **Layer 2.** Points the kit at a live web URL (or app / APK / IPA) and returns a first-pass map across functionality / UI / accessibility / performance / security — walks the main flows, captures evidence, returns a prioritized "go deeper" list. Breadth-first triage, not a full audit. |
+| **`diagnose-and-recommend`** | "what should I use to test my product" / "recommend a QA stack" / "onboard me" / describe a product | **Layer 1.** Diagnoses a product's quality risks from a plain-language description and recommends a testing stack — a Basic package by default plus Deep modules matched to the risks — with honest affiliate disclosure. Logs uncovered needs to `feature-requests/`. |
 
 ### MCP servers
 
@@ -38,9 +38,13 @@ QA AI KIT/
 ├── .claude/skills/                 # Project skills (also mirrored to ~/.claude/skills/)
 │   ├── review-test-plan/
 │   ├── write-bug-report/
-│   └── plan-to-pilot/
+│   ├── plan-to-pilot/
+│   ├── auto-discover-recon/        # Layer 2 — first-pass recon of a live target
+│   └── diagnose-and-recommend/     # Layer 1 — diagnose a product, recommend a stack
 ├── mcp-servers/
-│   └── qa-execution/               # Test-execution MCP server (Playwright + httpx + Appium)
+│   └── qa-execution/               # Test-execution + recon MCP server (Playwright + httpx + Appium + adb + aapt)
+├── capabilities/                   # tool-catalog.yaml — knowledge base behind Layer 1
+├── feature-requests/               # gap-capture log (roadmap + enterprise-tier signal)
 ├── pilot-tests/                    # Generated Wix Pilot specs (output of plan-to-pilot)
 ├── reviewed-plans/                 # Saved test plan reviews
 ├── ARCHITECTURE.md                 # Capability + MCP Gateway architecture
