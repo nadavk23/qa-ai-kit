@@ -25,11 +25,13 @@ from qa_execution.android import (
 )
 from qa_execution.browser import BrowserSession
 from qa_execution import recon
-from qa_execution.apk_static import apk_inspect_sync
+from qa_execution.apk_static import apk_inspect_sync, apk_security_sync
+from qa_execution.ipa_static import ipa_inspect_sync
 from qa_execution.mobile_recon import (
     android_a11y_audit_sync,
     android_perf_snapshot_sync,
     ios_a11y_audit_sync,
+    ios_perf_snapshot_sync,
 )
 from qa_execution.mobile import (
     DeviceRegistry,
@@ -466,6 +468,30 @@ async def apk_inspect(apk_path: str) -> str:
     return await asyncio.to_thread(apk_inspect_sync, apk_path)
 
 
+@mcp.tool()
+async def apk_security(apk_path: str) -> str:
+    """Deeper static security pass over an APK's AndroidManifest.xml (recon, v0.6).
+
+    Complements apk_inspect: parses the binary manifest via `aapt dump xmltree`
+    for per-component exported flags + permission protection, allowBackup,
+    cleartext-traffic, and network-security-config. Static first-pass — no
+    dataflow or native-lib analysis (use MobSF / apkanalyzer for that).
+    """
+    return await asyncio.to_thread(apk_security_sync, apk_path)
+
+
+@mcp.tool()
+async def ipa_inspect(ipa_path: str) -> str:
+    """Static first-pass recon of an IPA file — the iOS analog of apk_inspect.
+
+    Unpacks the app bundle's Info.plist (no Xcode, no install) and reports
+    identity, minimum iOS, privacy-usage strings (which sensitive resources the
+    app requests), App Transport Security posture, custom URL schemes, and
+    background modes. Entitlements/binary analysis are out of scope.
+    """
+    return await asyncio.to_thread(ipa_inspect_sync, ipa_path)
+
+
 # ---------- Mobile (iOS via Appium) ----------
 
 @mcp.tool()
@@ -752,6 +778,24 @@ async def ios_a11y_audit(token: str, limit: int = 12) -> str:
         return f"FAIL: {e}"
     try:
         return await asyncio.to_thread(ios_a11y_audit_sync, device, limit)
+    except Exception as e:
+        return f"FAIL: {type(e).__name__}: {e}"
+
+
+@mcp.tool()
+async def ios_perf_snapshot(token: str) -> str:
+    """First-pass iOS performance: cold-launch time via terminate + timed activate (recon).
+
+    The iOS analog of android_perf_snapshot's cold start. Single wall-clock
+    sample on a simulator — not an Instruments profile. Memory and frame timing
+    still need Instruments/xctrace (remaining gap).
+    """
+    try:
+        device = devices.get(token)
+    except KeyError as e:
+        return f"FAIL: {e}"
+    try:
+        return await asyncio.to_thread(ios_perf_snapshot_sync, device)
     except Exception as e:
         return f"FAIL: {type(e).__name__}: {e}"
 
