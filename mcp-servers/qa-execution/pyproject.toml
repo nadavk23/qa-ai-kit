@@ -1,6 +1,6 @@
 [project]
 name = "qa-execution"
-version = "0.5.0"
+version = "0.6.0"
 description = "MCP server providing web + API + iOS + Android execution + auto-discovery recon (web & mobile/APK) primitives for QA work (Playwright + Appium + adb + aapt)."
 readme = "README.md"
 requires-python = ">=3.10"

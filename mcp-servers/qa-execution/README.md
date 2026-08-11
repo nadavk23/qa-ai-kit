@@ -2,7 +2,7 @@
 
 MCP server providing web + API + iOS + Android execution primitives for QA work, built on Playwright + httpx + Appium (iOS) + direct `adb` (Android).
 
-## Tools (47)
+## Tools (50)
 
 ### Web + API (15)
 
@@ -24,9 +24,9 @@ MCP server providing web + API + iOS + Android execution primitives for QA work,
 | `api_request(method, url, ...)` | HTTP request for API testing |
 | `test_run(path)` | Run a YAML test file (web + API only — iOS YAML support is roadmap) |
 
-### Auto-discovery recon (6)
+### Auto-discovery recon (8)
 
-First-pass, breadth-over-depth mapping of a live target. Deliberately shallow — enough signal to prove value and point where to go deeper, **not** a full audit. See the `auto-discover-recon` skill, which orchestrates these plus flow-walking. Web + APK-static tools live here; runtime mobile a11y/perf tools live in the iOS/Android sections.
+First-pass, breadth-over-depth mapping of a live target. Deliberately shallow — enough signal to prove value and point where to go deeper, **not** a full audit. See the `auto-discover-recon` skill, which orchestrates these plus flow-walking. Web + APK/IPA-static tools live here; runtime mobile a11y/perf tools live in the iOS/Android sections.
 
 | Tool | Purpose |
 |---|---|
@@ -36,6 +36,8 @@ First-pass, breadth-over-depth mapping of a live target. Deliberately shallow �
 | `web_perf_snapshot()` | Single-load timing from the browser: TTFB, FCP, DOMContentLoaded, load, transfer weight, request count, DOM size, each with a rough Web-Vitals band. Unthrottled — not a lab benchmark. |
 | `security_headers_check(url)` | Standalone httpx check of HTTPS upgrade, security headers (HSTS, CSP, X-Frame-Options, X-Content-Type-Options, Referrer-Policy, Permissions-Policy), cookie flags, version disclosure. **Surface hygiene only — not a pentest.** |
 | `apk_inspect(apk_path)` | Static APK recon via `aapt dump badging` — **no device needed**. Package identity, version, min/target SDK, launchable entry, all permissions, and security flags (debuggable, dangerous-permission surface). The "point recon at an APK" entry point. |
+| `apk_security(apk_path)` | Deeper static APK security via `aapt dump xmltree` — **no device**. Per-component exported flags + permission protection, allowBackup, cleartext traffic, network-security-config. |
+| `ipa_inspect(ipa_path)` | Static IPA recon via Info.plist (zip + plistlib) — **no device, no Xcode**. Bundle identity, min iOS, privacy-usage strings, App Transport Security posture, URL schemes, background modes. |
 
 ### Cross-platform device session (3)
 
@@ -45,7 +47,7 @@ First-pass, breadth-over-depth mapping of a live target. Deliberately shallow �
 | `device_release(token)` | Close the session for `token` (iOS: quits Appium driver; Android: relinquishes the handle, emulator keeps running) |
 | `device_list()` | List active device sessions across platforms |
 
-### iOS (Appium) (10)
+### iOS (Appium) (11)
 
 | Tool | Purpose |
 |---|---|
@@ -59,6 +61,7 @@ First-pass, breadth-over-depth mapping of a live target. Deliberately shallow �
 | `ios_scroll(token, direction="down")` | Scroll up / down / left / right |
 | `ios_logs(token, log_type="syslog", lines=200)` | Tail recent device logs (real-time debug) |
 | `ios_a11y_audit(token, limit=12)` | **Recon.** Structural a11y: interactive elements with no accessibility name/label, `accessible=false` elements. No contrast / VoiceOver order. |
+| `ios_perf_snapshot(token)` | **Recon.** Cold-launch time via terminate + timed `activateApp`. Single wall-clock sample; memory/frame timing still need Instruments. |
 
 iOS locator strategies: `accessibility_id` (preferred), `predicate`, `xpath`, `class_chain`.
 
@@ -89,7 +92,8 @@ Android locator strategies: `text`, `accessibility_id` (content-desc), `resource
 | What you want to do | What the agent will use |
 |---|---|
 | First-pass recon of a URL | `web_recon(url)` — or `web_recon(url, session_name=...)` for the logged-in app; or the `auto-discover-recon` skill for flow-walking too |
-| First-pass recon of an APK | `apk_inspect(apk_path)` — static, no device; then install + `android_a11y_audit` / `android_perf_snapshot` for runtime |
+| First-pass recon of an APK | `apk_inspect` + `apk_security` — static, no device; then install + `android_a11y_audit` / `android_perf_snapshot` for runtime |
+| First-pass recon of an IPA | `ipa_inspect(ipa_path)` — static, no device; then install + `ios_a11y_audit` / `ios_perf_snapshot` for runtime |
 | See what's on screen | `web_navigate` → `web_screenshot` → describe |
 | Test a flow end-to-end | `web_batch` or `test_run` |
 | Check for visual bugs | `web_navigate` → `web_screenshot` → describe deviations |
@@ -274,8 +278,9 @@ then android_logcat lines=50, then device_release.
 - **v0.2**: iOS Simulator via Appium (`device_*` + `ios_*` tools)
 - **v0.3**: Android emulator via direct `adb` (`android_*` tools, no Appium), `ios_logs` for iOS debug parity
 - **v0.4**: web auto-discovery recon (`web_recon`, `web_discover`, `web_a11y_audit`, `web_perf_snapshot`, `security_headers_check`) — first-pass mapping across functionality / UI / accessibility / performance / security; session-aware (`web_recon` loads a saved auth session)
-- **v0.5** (current): mobile/APK recon — `apk_inspect` (static, no device), `android_a11y_audit`, `android_perf_snapshot`, `ios_a11y_audit`. Layer 2 now spans web **and** mobile.
-- **v0.6**: iOS runtime perf (Instruments/xctrace), deep APK security (per-component exported flags, network-security-config), IPA static inspection, CLI testing (`cli_*`), Chrome extension testing, real-device farm integration, mobile YAML runner
+- **v0.5**: mobile/APK recon — `apk_inspect` (static, no device), `android_a11y_audit`, `android_perf_snapshot`, `ios_a11y_audit`. Layer 2 spans web **and** mobile.
+- **v0.6** (current): deep APK security (`apk_security` — per-component exported flags, cleartext, backup), IPA static inspection (`ipa_inspect`), iOS cold-launch perf (`ios_perf_snapshot`)
+- **v0.7**: iOS on-device memory & frame timing (Instruments/xctrace), deep APK/iOS binary analysis (MobSF-class), CLI testing (`cli_*`), Chrome extension testing, real-device farm integration, mobile YAML runner
 - Later: multiple tabs, headful toggle, request mocking/interception, video recording, parameterized tests
 
 ## Limitations (v0.3)

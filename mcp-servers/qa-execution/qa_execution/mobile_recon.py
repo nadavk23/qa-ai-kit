@@ -14,6 +14,7 @@ where a deeper pass is worth it. Each returns a formatted report string.
 from __future__ import annotations
 
 import re
+import time
 import xml.etree.ElementTree as ET
 
 from qa_execution.android import AndroidDevice, _dump_ui_xml, _parse_bounds
@@ -296,5 +297,61 @@ def ios_a11y_audit_sync(device, limit: int = 12) -> str:
         "\nScope note: one screen, structural only — no contrast, VoiceOver rotor "
         "order, or Dynamic Type. Go deeper with a manual VoiceOver pass and the "
         "Accessibility Inspector on the flagged screens."
+    )
+    return "\n".join(lines)
+
+
+# --------------------------------------------------------------------------- #
+# iOS performance (cold-launch timing)
+# --------------------------------------------------------------------------- #
+
+def _ios_bundle_id(device) -> str | None:
+    if getattr(device, "bundle_id", None):
+        return device.bundle_id
+    try:
+        info = device.driver.execute_script("mobile: activeAppInfo")
+        if isinstance(info, dict):
+            return info.get("bundleId")
+    except Exception:
+        pass
+    return None
+
+
+def ios_perf_snapshot_sync(device) -> str:
+    """First-pass iOS performance: cold-launch time via terminate + timed activate.
+
+    The iOS analog of Android's `am start -W`: terminate the app, then measure
+    how long `mobile: activateApp` takes to bring it back. Single sample on a
+    simulator — wall-clock, not an Instruments profile. Memory and frame timing
+    still need Instruments/xctrace and are reported as remaining gaps.
+    """
+    bid = _ios_bundle_id(device)
+    if not bid:
+        return (
+            "FAIL: could not determine the app's bundle id. Allocate the session "
+            "with bundle_id=<app id>, or ensure the app is in the foreground."
+        )
+
+    lines = [f"=== iOS PERFORMANCE (first-pass, single sample) — {bid} ==="]
+    try:
+        device.driver.execute_script("mobile: terminateApp", {"bundleId": bid})
+        time.sleep(0.5)  # let the OS fully tear the app down for a true cold start
+        t0 = time.monotonic()
+        device.driver.execute_script("mobile: activateApp", {"bundleId": bid})
+        launch_ms = int((time.monotonic() - t0) * 1000)
+        band = "GOOD" if launch_ms <= 1000 else "NEEDS-WORK" if launch_ms <= 2500 else "POOR"
+        lines.append(f"  Cold launch (terminate→active): {launch_ms} ms   [{band}]")
+        lines.append(
+            "    (wall-clock around the Appium activateApp call — includes driver "
+            "round-trip, so treat as an upper bound, not a precise TTID.)"
+        )
+    except Exception as e:
+        lines.append(f"  Cold launch: measurement failed ({type(e).__name__}: {e})")
+
+    lines.append(
+        "\nGap: on-device memory and frame/hitch timing need Instruments "
+        "(xctrace) integration — not yet wired in. Go deeper with Xcode "
+        "Instruments (Time Profiler, Allocations, Animation Hitches) or "
+        "MetricKit in-app for field data."
     )
     return "\n".join(lines)

@@ -20,16 +20,16 @@ Auto-trigger inside Claude Code when their description matches your message. Ins
 
 | Server | Version | Tools | Surfaces covered |
 |---|---|---|---|
-| **`qa-execution`** | 0.5.0 | 47 | Web (Playwright) · API (httpx) · iOS Simulator (Appium) · Android emulator (direct `adb`, no Appium) · Auto-discovery recon (web & mobile/APK) |
+| **`qa-execution`** | 0.6.0 | 50 | Web (Playwright) · API (httpx) · iOS Simulator (Appium) · Android emulator (direct `adb`, no Appium) · Auto-discovery recon (web & mobile: APK + IPA) |
 
 **`qa-execution` tool breakdown:**
 - **Web + API (15)** — `ping`, `web_*` (12), `api_request`, `test_run`
-- **Auto-discovery recon (6)** — `web_recon` *(one-shot, session-aware)*, `web_discover`, `web_a11y_audit`, `web_perf_snapshot`, `security_headers_check`, `apk_inspect` *(static APK — no device)* — first-pass across functionality / UI / accessibility / performance / security
+- **Auto-discovery recon (8)** — `web_recon` *(one-shot, session-aware)*, `web_discover`, `web_a11y_audit`, `web_perf_snapshot`, `security_headers_check`, `apk_inspect` + `apk_security` *(static APK — no device)*, `ipa_inspect` *(static IPA — no device)* — first-pass across functionality / UI / accessibility / performance / security
 - **Device session (3)** — `device_allocate`, `device_release`, `device_list` (cross-platform: iOS + Android)
-- **iOS (10)** — `ios_tap`, `ios_type`, `ios_assert_element`, `ios_assert_text`, `ios_inspect`, `ios_screenshot`, `ios_wait`, `ios_scroll`, `ios_logs` *(log tail)*, `ios_a11y_audit` *(recon)*
-- **Android (13)** — `android_tap`, `android_type`, `android_assert_element`, `android_assert_text`, `android_inspect`, `android_screenshot`, `android_wait`, `android_scroll`, `android_back`, `android_home`, `android_logcat` *(log tail)*, `android_a11y_audit` *(recon)*, `android_perf_snapshot` *(recon)*
+- **iOS (11)** — `ios_tap`, `ios_type`, `ios_assert_element`, `ios_assert_text`, `ios_inspect`, `ios_screenshot`, `ios_wait`, `ios_scroll`, `ios_logs` *(log tail)*, `ios_a11y_audit` + `ios_perf_snapshot` *(recon)*
+- **Android (13)** — `android_tap`, `android_type`, `android_assert_element`, `android_assert_text`, `android_inspect`, `android_screenshot`, `android_wait`, `android_scroll`, `android_back`, `android_home`, `android_logcat` *(log tail)*, `android_a11y_audit` + `android_perf_snapshot` *(recon)*
 
-Roadmap: iOS runtime perf, deep APK/IPA security, CLI + Chrome extension testing (v0.6), real-device farm integration. See [`mcp-servers/qa-execution/README.md`](mcp-servers/qa-execution/README.md) for the full tool reference.
+Roadmap: iOS on-device memory/frame timing, deep binary analysis, CLI + Chrome extension testing (v0.7), real-device farm integration. See [`mcp-servers/qa-execution/README.md`](mcp-servers/qa-execution/README.md) for the full tool reference.
 
 ## Layout
 

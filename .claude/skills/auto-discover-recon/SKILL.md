@@ -36,9 +36,9 @@ Resolve what you were handed:
 | Target | Path |
 |---|---|
 | Web URL (`http(s)://…`) | Web recon — Steps 2–4. This is the fast, fully-supported path. |
-| `.apk` file | Static recon (Step 5a, `apk_inspect` — no device needed), then runtime recon (Step 5b) if an emulator/device is available. |
-| Running Android app | Runtime mobile recon — Step 5b. Requires an emulator/device set up (see `qa-execution` README). |
-| `.ipa` / iOS app | Runtime mobile recon — Step 5b, iOS variant. Requires Appium running. (IPA static inspection is not built — flag as a gap.) |
+| `.apk` file | Static recon (Step 5a, `apk_inspect` + `apk_security` — no device needed), then runtime recon (Step 5b) if an emulator/device is available. |
+| `.ipa` file | Static recon (Step 5a, `ipa_inspect` — no device needed), then runtime recon (Step 5b) if Appium + a simulator are available. |
+| Running Android / iOS app | Runtime mobile recon — Step 5b (Android needs an emulator/device; iOS needs Appium running). |
 | A product *description* with no live target | Wrong skill — this is Layer 1 territory. Point them at `diagnose-and-recommend` (placeholder) or offer `review-test-plan`. |
 
 If authorization is at all unclear, ask one direct question before running.
@@ -112,15 +112,23 @@ Return the report in the structure below.
 
 Only if the target is an app. There are two entry points:
 
-### 5a — Static, from an APK file (no device needed)
+### 5a — Static, from an APK or IPA file (no device needed)
 
-If you were handed a `.apk`, start here — it's fast and needs no emulator:
+If you were handed a `.apk` or `.ipa`, start here — it's fast and needs no
+emulator/simulator:
 
-- `apk_inspect(apk_path)` — package identity, version, min/target SDK, launchable
-  entry, all permissions, and security flags (debuggable, dangerous-permission
-  surface). This covers the functionality-surface + security dimensions before
-  the app is even installed. Read it first; it tells you what the app *is* and
-  what consent flows you'll need to exercise on-device.
+- **APK:** `apk_inspect(apk_path)` — identity, version, min/target SDK, launchable
+  entry, permissions, and badging-level security flags (debuggable, dangerous-
+  permission surface). Then `apk_security(apk_path)` for the deeper manifest pass
+  — per-component exported flags + permission protection, allowBackup, cleartext
+  traffic, network-security-config.
+- **IPA:** `ipa_inspect(ipa_path)` — bundle identity, minimum iOS, privacy-usage
+  strings (which sensitive resources it requests), App Transport Security posture,
+  custom URL schemes, background modes.
+
+These cover the functionality-surface + security dimensions before the app is
+even installed. Read them first; they tell you what the app *is* and which
+consent flows you'll need to exercise on-device.
 
 ### 5b — Runtime, on a device/emulator
 
@@ -131,9 +139,9 @@ If you were handed a `.apk`, start here — it's fast and needs no emulator:
 3. `android_a11y_audit` / `ios_a11y_audit` — **structured accessibility**:
    unlabeled controls, undescribed images, sub-48dp touch targets (Android),
    accessible=false elements (iOS). Run it **per key screen**, not just once.
-4. `android_perf_snapshot(package)` — **performance**: cold-start time, memory
-   (PSS), and frame jank. (iOS runtime perf still needs Instruments — flag as a
-   gap; see below.)
+4. `android_perf_snapshot(package)` / `ios_perf_snapshot` — **performance**:
+   Android gives cold-start + memory (PSS) + frame jank; iOS gives cold-launch
+   time (memory/frame timing on iOS still need Instruments — see gaps below).
 5. `android_screenshot` / `ios_screenshot` — UI evidence.
 6. Walk the app's main flow with `*_tap` / `*_type` / `*_assert_*`, same
    fake-data discipline as Step 3. Interact *before* `android_perf_snapshot` so
@@ -143,18 +151,21 @@ If you were handed a `.apk`, start here — it's fast and needs no emulator:
 8. `device_release` when done.
 
 **Mobile dimension coverage — what's real vs. still a gap:**
-- Functionality + UI: covered (apk_inspect, inspect, screenshot, flow-walk, logs).
+- Functionality + UI: covered (apk_inspect / ipa_inspect, inspect, screenshot,
+  flow-walk, logs).
 - Accessibility: covered structurally (`*_a11y_audit`). Contrast / screen-reader
   flow still manual.
-- Performance: **Android covered** (`android_perf_snapshot`); **iOS not** — needs
-  Instruments/xctrace. Flag iOS perf as a gap.
-- Security: static covered for APKs (`apk_inspect`); per-component exported flags
-  and network-security-config need binary-manifest analysis — gap. iOS static
-  (IPA) not covered — gap.
+- Performance: Android covered (`android_perf_snapshot`); iOS partial
+  (`ios_perf_snapshot` = cold-launch only). **Gap:** iOS on-device memory & frame
+  timing (need Instruments/xctrace).
+- Security: covered statically for APK (`apk_security` — exported components,
+  cleartext, backup) and IPA (`ipa_inspect` — ATS, privacy strings, URL schemes).
+  **Gaps:** APK dataflow/native-libs/dependency CVEs and iOS entitlements/binary
+  analysis (need MobSF / codesign / a pentest toolchain).
 
-Log the remaining gaps (iOS perf, deep APK security, IPA static) explicitly in
-the report's "Not covered" section — they're exactly the feature-requests that
-feed the roadmap and the enterprise tier.
+Log the remaining gaps (iOS memory & frame timing, deep APK/iOS binary analysis)
+explicitly in the report's "Not covered" section — they're exactly the feature-
+requests that feed the roadmap and the enterprise tier.
 
 ## Report format
 
