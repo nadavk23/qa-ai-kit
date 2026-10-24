@@ -17,9 +17,9 @@ Install on the new machine:
 ```bash
 mkdir -p "$HOME/Projects"
 cd "$HOME/Projects"
-gh repo clone nadavkatz/qa-ai-kit "QA AI KIT"
+gh repo clone nadavk23/qa-ai-kit "QA AI KIT"
 # Or via plain git if you don't have gh:
-# git clone git@github.com:nadavkatz/qa-ai-kit.git "QA AI KIT"
+# git clone https://github.com/nadavk23/qa-ai-kit.git "QA AI KIT"
 cd "QA AI KIT"
 ```
 

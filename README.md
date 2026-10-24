@@ -1,6 +1,14 @@
 # QA AI KIT
 
-Personal QA toolkit — Claude Code skills + MCP servers for test plan review, bug reporting, test code generation, and test execution across web, API, and iOS.
+**15 years of QA judgment, packaged as an AI toolkit.** Claude Code skills + an MCP server that diagnose a product's quality risks, recon a live URL or app, review test plans, write bug reports, and execute tests across web, API, iOS and Android.
+
+Built by [Nadav Katz](https://www.linkedin.com/in/nadav-katz-2b497541) (ex-QA & Release Manager at Wix) to validate AI-built software with real QA craft on top.
+
+**Highlights**
+- **50 MCP tools**: Playwright web, httpx API, iOS via Appium, Android via direct `adb` (no Appium or npm needed)
+- **Layer 1, diagnose & recommend**: describe a product in plain language and get its risk profile plus a recommended testing stack
+- **Layer 2, auto-discovery recon**: point it at a URL, APK or IPA for a first-pass map across functionality, UI, accessibility, performance and security
+- **Skills** for test-plan review (ISTQB-aligned), incremental bug reports and natural-language-to-test generation
 
 ## What's in the kit
 
