@@ -165,3 +165,7 @@ Open Claude Code with this folder as the working directory, then ask in natural 
 - [`ARCHITECTURE.md`](ARCHITECTURE.md) — long-term direction: capabilities behind a single MCP Gateway for external integrations (Jira / Slack / GitHub / etc.)
 - [`RECOVERY.md`](RECOVERY.md) — bring the kit back on a freshly reformatted machine
 - [`mcp-servers/qa-execution/README.md`](mcp-servers/qa-execution/README.md) — full reference for every `qa-execution` tool, including iOS locator strategies and YAML test schema
+
+## License
+
+Apache 2.0. See [LICENSE](LICENSE). Copyright 2026 Nadav Katz.
